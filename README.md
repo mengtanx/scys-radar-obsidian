@@ -29,7 +29,7 @@
 
 ## 安装
 
-### 方式一：BRAT（推荐，社区插件审核中）
+### 方式一：BRAT（推荐，官方市场审核中）
 
 1. 安装 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 插件
 2. 命令面板 → `BRAT: Add a beta plugin for testing`
