@@ -1,0 +1,240 @@
+.scys-root {
+	padding: 12px;
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+}
+
+.scys-auth {
+	max-width: 360px;
+	margin: 32px auto 12px;
+	text-align: center;
+	color: var(--text-muted);
+}
+
+.scys-auth-status {
+	margin-top: 10px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	min-height: 16px;
+}
+
+.scys-hint {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	margin: 6px 0;
+	line-height: 1.5;
+}
+
+.scys-paste-input {
+	width: 100%;
+	margin: 8px 0;
+	font-size: var(--font-ui-smaller);
+}
+
+.scys-auth .scys-mini-btn {
+	margin-top: 4px;
+}
+
+.scys-auth + .scys-auth {
+	margin-top: 0;
+	border-top: 1px dashed var(--background-modifier-border);
+	padding-top: 14px;
+}
+
+.scys-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.scys-tab {
+	background: transparent;
+	border: 1px solid transparent;
+	padding: 4px 10px;
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+.scys-tab-active {
+	background: var(--background-modifier-active-hover);
+	border-color: var(--background-modifier-border);
+	font-weight: 600;
+}
+
+.scys-spacer {
+	flex: 1;
+}
+
+.scys-mini-btn {
+	background: var(--interactive-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	padding: 2px 8px;
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+	color: var(--text-normal);
+}
+
+.scys-mini-btn:hover {
+	background: var(--interactive-hover);
+}
+
+.scys-mini-btn.is-on {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.scys-list {
+	flex: 1;
+	overflow-y: auto;
+	padding: 8px 2px;
+}
+
+.scys-empty {
+	color: var(--text-faint);
+	text-align: center;
+	padding: 40px 0;
+}
+
+.scys-card {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	padding: 10px 12px;
+	margin-bottom: 8px;
+	cursor: pointer;
+	transition: border-color 0.15s;
+}
+
+.scys-card:hover {
+	border-color: var(--interactive-accent);
+}
+
+.scys-card-digest {
+	border-left: 3px solid var(--color-accent, #d4a017);
+}
+
+.scys-card-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 4px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	flex-wrap: wrap;
+}
+
+.scys-badge {
+	padding: 1px 6px;
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-smaller);
+	background: var(--background-modifier-hover);
+}
+
+.scys-badge-digest {
+	background: var(--color-accent, #d4a017);
+	color: var(--text-on-accent);
+}
+
+.scys-badge-sail {
+	background: var(--background-modifier-hover);
+}
+
+.scys-date {
+	color: var(--text-faint);
+}
+
+.scys-stats {
+	color: var(--text-faint);
+	margin-left: auto;
+}
+
+.scys-title {
+	font-weight: 600;
+	line-height: 1.4;
+	margin-bottom: 2px;
+}
+
+.scys-body {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.5;
+	margin-bottom: 6px;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.scys-card-foot {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+}
+
+.scys-author {
+	color: var(--text-muted);
+}
+
+.scys-hl {
+	background: rgba(255, 213, 79, 0.35);
+	border-radius: 2px;
+	padding: 0 1px;
+	color: var(--text-normal);
+	font-weight: 600;
+}
+
+.scys-status {
+	padding-top: 6px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	text-align: center;
+}
+
+.scys-detail {
+	max-width: 720px;
+}
+
+.scys-detail-body {
+	max-height: 55vh;
+	overflow-y: auto;
+	padding: 12px 0;
+	line-height: 1.7;
+}
+
+.scys-detail-body img {
+	max-width: 100%;
+	border-radius: var(--radius-s);
+}
+
+.scys-detail-meta {
+	display: flex;
+	gap: 14px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	margin: 8px 0;
+	flex-wrap: wrap;
+}
+
+.scys-detail-foot {
+	display: flex;
+	gap: 8px;
+	padding-top: 10px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.scys-save-btn {
+	border-color: var(--interactive-accent);
+}
+
+.theme-dark .scys-hl {
+	background: rgba(255, 183, 77, 0.25);
+}

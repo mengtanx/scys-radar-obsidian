@@ -1,0 +1,74 @@
+<svg viewBox="0 0 1200 300" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Scys Radar: 生财有术雷达，装进 Obsidian 侧栏的社区情报站">
+  <title>Scys Radar 生财雷达：把生财有术装进 Obsidian 侧栏</title>
+  <desc>左侧为雷达扫描图形，标注 hot/digest/fxb/sail 四个数据源；中部为插件名与价值说明；右侧为插件 UI 预览，兴趣关键词橙色高亮。</desc>
+  <defs>
+    <linearGradient id="scanline" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#F59A23" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#F59A23" stop-opacity="0"/>
+    </linearGradient>
+    <marker id="dot" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="4" markerHeight="4">
+      <circle cx="4" cy="4" r="3" fill="#F59A23"/>
+    </marker>
+  </defs>
+  <style>
+    .t1 { font: 600 44px -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #1a1a1a; }
+    .t2 { font: 400 20px -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #5c5c5c; }
+    .tag { font: 500 13px ui-monospace, 'SF Mono', Menlo, monospace; fill: #F59A23; }
+    .mono { font: 400 13px ui-monospace, 'SF Mono', Menlo, monospace; fill: #8a8a8a; }
+  </style>
+
+  <!-- 左侧：雷达图形 -->
+  <g transform="translate(90,150)">
+    <circle r="86" fill="none" stroke="#F59A23" stroke-opacity="0.25" stroke-width="1.5"/>
+    <circle r="58" fill="none" stroke="#F59A23" stroke-opacity="0.35" stroke-width="1.5"/>
+    <circle r="30" fill="none" stroke="#F59A23" stroke-opacity="0.5" stroke-width="1.5"/>
+    <circle r="4" fill="#F59A23"/>
+    <!-- 扫描扇区 -->
+    <path d="M0 0 L86 0 A86 86 0 0 0 43 -74.5 Z" fill="url(#scanline)"/>
+    <!-- 目标点：四个数据源 -->
+    <circle cx="52" cy="-34" r="6" fill="#F59A23"><animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/></circle>
+    <circle cx="-58" cy="-14" r="5" fill="#d97a06"><animate attributeName="opacity" values="0.4;1;0.4" dur="2.6s" repeatCount="indefinite"/></circle>
+    <circle cx="20" cy="52" r="5" fill="#d97a06"><animate attributeName="opacity" values="0.5;1;0.5" dur="3s" repeatCount="indefinite"/></circle>
+    <circle cx="-30" cy="44" r="4" fill="#F59A23" opacity="0.7"/>
+    <!-- 标签 -->
+    <text x="62" y="-40" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#8a8a8a">hot</text>
+    <text x="-96" y="-18" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#8a8a8a">digest</text>
+    <text x="30" y="70" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#8a8a8a">fxb</text>
+    <text x="-72" y="62" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#8a8a8a">sail</text>
+  </g>
+
+  <!-- 中部：标题与价值 -->
+  <g transform="translate(240,0)">
+    <text class="tag" x="0" y="86">OBSIDIAN PLUGIN · 生财有术 MCP</text>
+    <text class="t1" x="0" y="142">Scys Radar <tspan fill="#F59A23">生财雷达</tspan></text>
+    <text class="t2" x="0" y="186">把生财有术装进 Obsidian 侧栏 —— 热门、精华、风向标、航海，</text>
+    <text class="t2" x="0" y="216">你的兴趣关键词自动高亮，好帖一键收藏为笔记。</text>
+    <g transform="translate(0,248)">
+      <rect x="0" y="0" width="118" height="30" rx="15" fill="none" stroke="#F59A23" stroke-width="1.2"/>
+      <text class="mono" x="59" y="20" text-anchor="middle" fill="#F59A23">searchTopic</text>
+      <rect x="130" y="0" width="130" height="30" rx="15" fill="none" stroke="#F59A23" stroke-width="1.2"/>
+      <text class="mono" x="195" y="20" text-anchor="middle" fill="#F59A23">contentSearch</text>
+      <rect x="272" y="0" width="112" height="30" rx="15" fill="none" stroke="#F59A23" stroke-width="1.2"/>
+      <text class="mono" x="328" y="20" text-anchor="middle" fill="#F59A23">topicDetail</text>
+      <rect x="396" y="0" width="110" height="30" rx="15" fill="none" stroke="#F59A23" stroke-width="1.2"/>
+      <text class="mono" x="451" y="20" text-anchor="middle" fill="#F59A23">activityList</text>
+    </g>
+  </g>
+
+  <!-- 右侧：迷你 UI 预览 -->
+  <g transform="translate(860,44)">
+    <rect x="0" y="0" width="290" height="212" rx="12" fill="#ffffff" stroke="#e5e5e5" stroke-width="1"/>
+    <rect x="0" y="0" width="290" height="34" rx="12" fill="#FFF6E8"/>
+    <rect x="0" y="22" width="290" height="12" fill="#FFF6E8"/>
+    <text x="14" y="22" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#F59A23">🔥 热门  💎 精华  🧭 风向标  ⛵ 航海</text>
+    <rect x="12" y="46" width="266" height="46" rx="8" fill="#FAFAFA" stroke="#eee"/>
+    <rect x="12" y="100" width="266" height="46" rx="8" fill="#FAFAFA" stroke="#eee"/>
+    <rect x="12" y="154" width="266" height="46" rx="8" fill="#FAFAFA" stroke="#eee"/>
+    <text x="24" y="64" font-family="-apple-system,'PingFang SC',sans-serif" font-size="12" fill="#1a1a1a">从封店月损 8 万到单月 5 万，<tspan fill="#F59A23" font-weight="600">AI</tspan> 原创重做小红书虚拟</text>
+    <text x="24" y="82" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#aaa">尹星河 · 👍 56 · 👁 784</text>
+    <text x="24" y="118" font-family="-apple-system,'PingFang SC',sans-serif" font-size="12" fill="#1a1a1a">OpenAI DevDay 新出的 <tspan fill="#F59A23" font-weight="600">Agent</tspan> 产品 Dot</text>
+    <text x="24" y="136" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#aaa">袁欣就是圆心 · 👍 2 · 👁 470</text>
+    <text x="24" y="172" font-family="-apple-system,'PingFang SC',sans-serif" font-size="12" fill="#1a1a1a"><tspan fill="#F59A23" font-weight="600">ChatGPT</tspan> 可以投放广告了，分享这个机会</text>
+    <text x="24" y="190" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="#aaa">小王子 · 👍 2 · 👁 344</text>
+  </g>
+</svg>
