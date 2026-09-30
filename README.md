@@ -48,6 +48,10 @@
 2. 点 **「授权登录生财账号」** → 浏览器登录生财 → 自动跳回
 3. 开刷。右上 ⚙️ 配置你的兴趣关键词、收藏目录、拉取条数
 
+> 还不是生财会员？扫码领 **3 天免费体验卡**，进去看看值不值：
+
+<div align="center"><img src="assets/scys-invite-3day.jpg" alt="生财有术 3 天免费体验卡邀请码" width="260"></div>
+
 <details>
 <summary>🔒 授权跳转没回来？有手动兜底</summary>
 
