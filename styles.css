@@ -208,11 +208,13 @@
 	overflow-y: auto;
 	padding: 12px 0;
 	line-height: 1.7;
+	white-space: pre-wrap;
+	word-break: break-word;
 }
 
-.scys-detail-body img {
-	max-width: 100%;
-	border-radius: var(--radius-s);
+.scys-detail-plain {
+	font-size: var(--font-ui-medium);
+	color: var(--text-normal);
 }
 
 .scys-detail-meta {

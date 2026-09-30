@@ -590,13 +590,20 @@ class TopicDetailModal extends Modal {
 		if (d.likes != null) meta.createSpan({ text: '👍 ' + d.likes });
 		if (d.reads != null) meta.createSpan({ text: '👁 ' + d.reads });
 		const bodyEl = contentEl.createDiv({ cls: 'scys-detail-body' });
-		const html = String(d.content || '')
-			.replace(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g, '<img alt="$1" src="$2" loading="lazy">')
-			.replace(/\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g, '<a href="$2" target="_blank">$1</a>');
-		bodyEl.innerHTML = html;
+		bodyEl.appendText(String(d.content || ''));
+		contentEl.addClass('scys-detail-plain');
 		const foot = contentEl.createDiv({ cls: 'scys-detail-foot' });
-		const openBtn = foot.createEl('button', { text: '🔗 浏览器打开', cls: 'scys-mini-btn' });
-		openBtn.onclick = () => window.open(d.url || this.item.url, '_blank');
+		const mdBtn = foot.createEl('button', { text: '📝 渲染为 Markdown', cls: 'scys-mini-btn' });
+		mdBtn.onclick = async () => {
+			mdBtn.disabled = true;
+			try {
+				await window.MarkdownRenderer.render(this.app, String(d.content || ''), bodyEl, d.url || '', this.plugin);
+				bodyEl.removeClass('scys-detail-plain');
+				mdBtn.remove();
+			} catch (e) {
+				mdBtn.disabled = false;
+			}
+		};
 		const saveBtn = foot.createEl('button', { text: '⭐ 收藏为笔记', cls: 'scys-mini-btn scys-save-btn' });
 		saveBtn.onclick = () => {
 			this.plugin.saveAsNote(this.item, d);
