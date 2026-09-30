@@ -1,7 +1,7 @@
 {
   "id": "scys-radar",
   "name": "Scys Radar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "1.5.0",
   "description": "生财有术 MCP 雷达：在 Obsidian 里浏览热门/精华/风向标/航海，兴趣关键词高亮，一键收藏为笔记。Scys (shengcaiyoushu) MCP radar inside Obsidian.",
   "author": "zackzhangkai",
