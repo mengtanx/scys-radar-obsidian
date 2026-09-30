@@ -7,7 +7,7 @@
 [![Obsidian](https://img.shields.io/badge/Obsidian-%E2%89%A51.5.0-8b6cef?logo=obsidian&logoColor=white)](https://obsidian.md)
 [![MCP](https://img.shields.io/badge/via-%E7%94%9F%E8%B4%A2%E6%9C%89%E6%9C%AF%20MCP-F59A23)](https://scys.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![GitHub release](https://img.shields.io/github/v/release/zackzhangkai/scys-radar?include_prereleases)](https://github.com/zackzhangkai/scys-radar/releases)
+[![GitHub release](https://img.shields.io/github/v/release/zackzhangkai/scys-radar-obsidian?include_prereleases)](https://github.com/zackzhangkai/scys-radar-obsidian/releases)
 
 </div>
 
@@ -33,12 +33,12 @@
 
 1. 安装 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 插件
 2. 命令面板 → `BRAT: Add a beta plugin for testing`
-3. 输入 `zackzhangkai/scys-radar`
+3. 输入 `zackzhangkai/scys-radar-obsidian`
 4. 启用「Scys Radar」
 
 ### 方式二：手动安装
 
-1. 从 [Releases](https://github.com/zackzhangkai/scys-radar/releases) 下载 `main.js`、`manifest.json`、`styles.css`
+1. 从 [Releases](https://github.com/zackzhangkai/scys-radar-obsidian/releases) 下载 `main.js`、`manifest.json`、`styles.css`
 2. 放到 `<你的库>/.obsidian/plugins/scys-radar/`
 3. 设置 → 第三方插件 → 启用 **Scys Radar**
 
