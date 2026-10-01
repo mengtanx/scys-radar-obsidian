@@ -146,6 +146,9 @@
 	background: var(--background-modifier-hover);
 }
 
+.scys-badge-rank { background: var(--interactive-accent); color: var(--text-on-accent); }
+.scys-badge-board { background: var(--background-modifier-hover); color: var(--text-muted); }
+
 .scys-date {
 	color: var(--text-faint);
 }
@@ -236,6 +239,9 @@
 .scys-save-btn {
 	border-color: var(--interactive-accent);
 }
+
+.scys-token-share { max-width: 420px; text-align: center; }
+.scys-token-share-qr { display: block; width: 220px; height: 220px; object-fit: contain; margin: 18px auto 8px; border-radius: var(--radius-m); }
 
 .theme-dark .scys-hl {
 	background: rgba(255, 183, 77, 0.25);

@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
 	partyCity: '武汉市',
 	partyDistrict: '',
 	partyOnlyFuture: true,
+	tokenRankEndpoint: 'https://scys.com/tokenrank/api/subapp/leaderboard',
 };
 
 const { Plugin, Notice, ItemView, WorkspaceLeaf, Modal, Setting, PluginSettingTab, TFile, Platform } = require('obsidian');
@@ -36,6 +37,11 @@ function stripMd(s, n = 120) {
 		.replace(/\s+/g, ' ')
 		.trim();
 	return t.length > n ? t.slice(0, n) + '…' : t;
+}
+
+function formatTokens(value) {
+	const n = Number(value) || 0;
+	return n >= 1e8 ? (n / 1e8).toFixed(2) + ' 亿' : n >= 1e4 ? (n / 1e4).toFixed(1) + ' 万' : n.toLocaleString('zh-CN');
 }
 
 class ScysOAuth {
@@ -356,9 +362,12 @@ class ScysRadarView extends ItemView {
 				subs: [
 					{ key: 'lib', label: '项目库', load: () => this.plugin.fetchProjectLib() },
 					{ key: 'fxb', label: '风向标', load: () => this.plugin.fetchFxb() },
+					{ key: 'hit', label: '中标', load: () => this.plugin.fetchSelectedFxb() },
 					{ key: 'super', label: '超级标的', load: () => this.plugin.fetchSuper() },
 				],
 			},
+			{ key: 'token', label: '📊 Token 榜', load: () => this.plugin.fetchTokenRank() },
+			{ key: 'board', label: '🏅 榜单', load: () => this.plugin.fetchContentBoards() },
 		];
 	}
 
@@ -475,6 +484,8 @@ class ScysRadarView extends ItemView {
 		};
 		const cfgBtn = row2.createEl('button', { text: '⚙️', cls: 'scys-mini-btn' });
 		cfgBtn.onclick = () => this.plugin.openSettings();
+		const shareBtn = row2.createEl('button', { text: '分享 Token', cls: 'scys-mini-btn' });
+		shareBtn.onclick = () => this.plugin.openTokenShare();
 
 		this.listEl = root.createDiv({ cls: 'scys-list' });
 		this.statusEl = root.createDiv({ cls: 'scys-status' });
@@ -560,6 +571,7 @@ class ScysRadarView extends ItemView {
 				: '暂无聚会';
 		}
 		if (this.tab === 'proj') return '暂无项目内容';
+		if (this.tab === 'hit') return '暂无中标内容';
 		return '暂无内容（或被兴趣过滤掉了）';
 	}
 
@@ -582,7 +594,13 @@ class ScysRadarView extends ItemView {
 		for (const it of items) {
 			const card = el.createDiv({ cls: 'scys-card' + (it.isDigested ? ' scys-card-digest' : '') });
 			const head = card.createDiv({ cls: 'scys-card-head' });
-			if (it.kind === 'sail') {
+			if (it.kind === 'rank') {
+				head.createSpan({ cls: 'scys-badge scys-badge-rank', text: '第 ' + it.rank + ' 名' });
+				head.createSpan({ cls: 'scys-stats', text: '⚡ ' + formatTokens(it.tokens) + ' Token' });
+			} else if (it.kind === 'board') {
+				head.createSpan({ cls: 'scys-badge scys-badge-board', text: it.typeLabel });
+				head.createSpan({ cls: 'scys-date', text: it.dateText });
+			} else if (it.kind === 'sail') {
 				head.createSpan({ cls: 'scys-badge scys-badge-sail', text: it.typeLabel || '航海' });
 				head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
 			} else if (it.kind === 'party') {
@@ -621,11 +639,14 @@ class ScysRadarView extends ItemView {
 				const detailBtn = foot.createEl('button', { text: '详情', cls: 'scys-mini-btn' });
 				detailBtn.onclick = () => this.plugin.openDetail(it);
 			}
-			const saveBtn = foot.createEl('button', { text: '⭐ 收藏为笔记', cls: 'scys-mini-btn scys-save-btn' });
-			saveBtn.onclick = () => this.plugin.saveAsNote(it);
+			if (it.kind !== 'rank' && it.kind !== 'board') {
+				const saveBtn = foot.createEl('button', { text: '⭐ 收藏为笔记', cls: 'scys-mini-btn scys-save-btn' });
+				saveBtn.onclick = () => this.plugin.saveAsNote(it);
+			}
 			card.onclick = (e) => {
 				if (e.target.tagName === 'BUTTON') return;
-				this.plugin.openDetail(it);
+				if ((it.kind === 'rank' || it.kind === 'board') && it.url) window.open(it.url, '_blank');
+				else this.plugin.openDetail(it);
 			};
 		}
 		if (this.statusEl) {
@@ -875,6 +896,21 @@ class AskYiRenModal extends Modal {
 	}
 }
 
+class TokenShareModal extends Modal {
+	constructor(app, plugin) { super(app); this.plugin = plugin; }
+	onOpen() {
+		const el = this.contentEl;
+		el.empty(); el.addClass('scys-token-share');
+		el.createEl('h3', { text: '分享我的 Token 消耗' });
+		el.createEl('p', { text: 'Token 数据与公开范围由生财官方排行榜管理；插件不会读取、导出或分享你的 OAuth Token。' });
+		const qr = el.createEl('img', { cls: 'scys-token-share-qr', attr: { alt: 'Zack 的个人微信二维码' } });
+		qr.src = this.plugin.app.vault.adapter.getResourcePath(this.plugin.manifest.dir + '/assets/wechat-qr.png');
+		el.createDiv({ cls: 'scys-hint', text: '扫码加 Zack，交流 AI 编程、Obsidian 与生财情报。' });
+		const open = el.createEl('button', { text: '打开我的官方 Token 页面', cls: 'scys-mini-btn scys-save-btn' });
+		open.onclick = () => window.open('https://scys.com/tokenrank/', '_blank');
+	}
+}
+
 class ScysRadarSettingTab extends PluginSettingTab {
 	constructor(app, plugin) {
 		super(app, plugin);
@@ -975,6 +1011,7 @@ class ScysRadarSettingTab extends PluginSettingTab {
 }
 
 class ScysRadarPlugin extends Plugin {
+	openTokenShare() { new TokenShareModal(this.app, this).open(); }
 	async onload() {
 		try {
 			await this.loadSettings();
@@ -1165,6 +1202,28 @@ class ScysRadarPlugin extends Plugin {
 		const c = await this.readyClient();
 		const r = await c.callTool('searchTopic', { includeMenuIdList: ['2634453'], displayMode: 1, pageIndex: 1, pageSize: 30 });
 		return ((r && r.items) || []).map((x) => this.mapTopic(x));
+	}
+
+	async fetchSelectedFxb() {
+		const c = await this.readyClient();
+		const r = await c.callTool('contentSearch', { pageScene: 'fxb', displayMode: 1, pageIndex: 1, pageSize: 30 });
+		return ((r && r.topicDetailDTO && r.topicDetailDTO.items) || [])
+			.filter((x) => x.isSelected || x.isBid || (x.topicDTO && (x.topicDTO.isSelected || x.topicDTO.isBid || x.topicDTO.isChosen)))
+			.map((x) => this.mapTopic(x));
+	}
+
+	async fetchTokenRank() {
+		const r = await requestUrlSafe({ url: this.settings.tokenRankEndpoint + '?range=7d&board=total&metric=total&limit=30' });
+		if (!r || r.status !== 0) throw new Error((r && r.message) || 'Token 榜单暂时不可用');
+		return (r.entries || []).map((x) => ({ kind: 'rank', rank: x.rank, tokens: x.score, title: x.name || '匿名用户', summary: '主力工具：' + Object.keys(x.byTool || {}).join(' / ') + (x.primaryModel ? ' · ' + x.primaryModel : ''), author: '', url: 'https://scys.com/tokenrank/u/' + x.userId }));
+	}
+
+	async fetchContentBoards() {
+		return [
+			{ kind: 'board', typeLabel: '锚点榜 · 周榜', title: '锚点榜 · 周榜', summary: '查看本周圈友投锚的优质内容与机会信号。', dateText: '每周更新', url: 'https://scys.com/' },
+			{ kind: 'board', typeLabel: '总投锚榜', title: '总投锚榜', summary: '查看累计获得最多投锚的内容。', dateText: '累计榜单', url: 'https://scys.com/' },
+			{ kind: 'board', typeLabel: '文章点赞榜', title: '文章点赞榜', summary: '查看获得最多点赞的生财文章。', dateText: '内容热度', url: 'https://scys.com/' },
+		];
 	}
 
 	async fetchParties(scope) {

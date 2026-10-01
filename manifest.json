@@ -3,7 +3,7 @@
   "name": "Scys Radar",
   "version": "0.2.0",
   "minAppVersion": "1.5.0",
-  "description": "生财有术 MCP 雷达：热门/精华/航海/本地聚会/项目三类俱全，关键词搜索与「问亦仁」，兴趣高亮，一键收藏为笔记。Scys (shengcaiyoushu) MCP community radar.",
+  "description": "生财有术 MCP 雷达：热门、项目、中标、超级标的、Token 榜单与聚会，支持搜索、问亦仁和一键收藏。Scys (shengcaiyoushu) MCP community radar.",
   "author": "zackzhangkai",
   "authorUrl": "https://github.com/zackzhangkai",
   "isDesktopOnly": true
