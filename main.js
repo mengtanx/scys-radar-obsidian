@@ -6,6 +6,11 @@ const DEFAULT_SETTINGS = {
 	saveFolder: '生财副业/02 每日情报',
 	hotPageSize: 15,
 	showBody: true,
+	sailIncludeFinished: false,
+	partyProvince: '湖北省',
+	partyCity: '武汉市',
+	partyDistrict: '',
+	partyOnlyFuture: true,
 };
 
 const { Plugin, Notice, ItemView, WorkspaceLeaf, Modal, Setting, PluginSettingTab, TFile, Platform } = require('obsidian');
@@ -330,14 +335,30 @@ class ScysRadarView extends ItemView {
 		super(leaf);
 		this.plugin = plugin;
 		this.tab = 'hot';
+		this.sub = null;
+		this.searchQuery = null;
 		this.items = [];
 		this.loading = false;
 		this.onlyInterest = false;
 		this.navs = [
 			{ key: 'hot', label: '🔥 热门', load: () => this.plugin.fetchHot() },
 			{ key: 'good', label: '💎 精华', load: () => this.plugin.fetchGood() },
-			{ key: 'fxb', label: '🧭 风向标', load: () => this.plugin.fetchFxb() },
 			{ key: 'sail', label: '⛵ 航海', load: () => this.plugin.fetchSail() },
+			{
+				key: 'party', label: '📍 聚会',
+				subs: [
+					{ key: 'local', label: '本地', load: () => this.plugin.fetchParties('local') },
+					{ key: 'all', label: '全国', load: () => this.plugin.fetchParties('all') },
+				],
+			},
+			{
+				key: 'proj', label: '🧭 项目',
+				subs: [
+					{ key: 'lib', label: '项目库', load: () => this.plugin.fetchProjectLib() },
+					{ key: 'fxb', label: '风向标', load: () => this.plugin.fetchFxb() },
+					{ key: 'super', label: '超级标的', load: () => this.plugin.fetchSuper() },
+				],
+			},
 		];
 	}
 
@@ -416,39 +437,105 @@ class ScysRadarView extends ItemView {
 	}
 
 	renderMain(root) {
+		const searchRow = root.createDiv({ cls: 'scys-searchrow' });
+		const input = searchRow.createEl('input', {
+			cls: 'scys-search-input',
+			attr: { type: 'search', placeholder: '搜索生财正文… 回车即用 MCP 检索' },
+		});
+		const runSearch = () => this.doSearch(input.value);
+		input.onkeydown = (e) => {
+			if (e.key === 'Enter') runSearch();
+		};
+		const goBtn = searchRow.createEl('button', { text: '🔍 搜索', cls: 'scys-mini-btn' });
+		goBtn.onclick = runSearch;
+		const askBtn = searchRow.createEl('button', { text: '🙋 问亦仁', cls: 'scys-mini-btn', attr: { title: '向亦仁的 AI 分身提问，回答生成约需 1-2 分钟' } });
+		askBtn.onclick = () => this.plugin.openAskYiRen(input.value);
+
 		const bar = root.createDiv({ cls: 'scys-toolbar' });
 		for (const n of this.navs) {
 			const b = bar.createEl('button', { text: n.label, cls: this.tab === n.key ? 'scys-tab scys-tab-active' : 'scys-tab' });
 			b.onclick = () => this.loadTab(n.key);
 		}
-		const spacer = bar.createDiv({ cls: 'scys-spacer' });
-		const onlyBtn = bar.createEl('button', { text: '🎯 只看感兴趣', cls: 'scys-mini-btn', attr: { title: '按兴趣关键词过滤' } });
+		this.subBarEl = root.createDiv({ cls: 'scys-subtoolbar' });
+		this.renderSubBar();
+
+		const row2 = root.createDiv({ cls: 'scys-toolbar scys-toolbar-2' });
+		const spacer = row2.createDiv({ cls: 'scys-spacer' });
+		const onlyBtn = row2.createEl('button', { text: '🎯 只看感兴趣', cls: 'scys-mini-btn', attr: { title: '按兴趣关键词过滤' } });
+		if (this.onlyInterest) onlyBtn.addClass('is-on');
 		onlyBtn.onclick = () => {
 			this.onlyInterest = !this.onlyInterest;
 			onlyBtn.toggleClass('is-on', this.onlyInterest);
 			this.renderList();
 		};
-		const refreshBtn = bar.createEl('button', { text: '刷新', cls: 'scys-mini-btn' });
-		refreshBtn.onclick = () => this.loadTab(this.tab);
-		const cfgBtn = bar.createEl('button', { text: '⚙️', cls: 'scys-mini-btn' });
+		const refreshBtn = row2.createEl('button', { text: '刷新', cls: 'scys-mini-btn' });
+		refreshBtn.onclick = () => {
+			if (this.tab === 'search' && this.searchQuery) this.doSearch(this.searchQuery);
+			else this.loadTab(this.tab, this.sub);
+		};
+		const cfgBtn = row2.createEl('button', { text: '⚙️', cls: 'scys-mini-btn' });
 		cfgBtn.onclick = () => this.plugin.openSettings();
 
 		this.listEl = root.createDiv({ cls: 'scys-list' });
 		this.statusEl = root.createDiv({ cls: 'scys-status' });
 	}
 
-	async loadTab(key) {
-		this.tab = key;
-		this.items = [];
+	renderSubBar() {
+		const el = this.subBarEl;
+		if (!el) return;
+		el.empty();
+		const nav = this.navs.find((n) => n.key === this.tab);
+		if (!nav || !nav.subs) {
+			el.addClass('scys-hidden');
+			return;
+		}
+		el.removeClass('scys-hidden');
+		for (const s of nav.subs) {
+			const b = el.createEl('button', { text: s.label, cls: this.sub === s.key ? 'scys-subtab scys-subtab-active' : 'scys-subtab' });
+			b.onclick = () => this.loadTab(this.tab, s.key);
+		}
+	}
+
+	async doSearch(q) {
+		const kw = String(q || '').trim();
+		if (!kw) {
+			new Notice('请输入搜索关键词', 4000);
+			return;
+		}
+		this.tab = 'search';
+		this.sub = null;
+		this.searchQuery = kw;
+		this.contentEl.querySelectorAll('button.scys-tab').forEach((b) => b.removeClass('scys-tab-active'));
+		this.renderSubBar();
+		this.renderList('正在检索「' + kw + '」…');
+		try {
+			this.items = (await this.plugin.fetchSearch(kw)) || [];
+		} catch (e) {
+			new Notice('搜索失败：' + e.message, 6000);
+			this.renderList('搜索失败：' + e.message);
+			return;
+		}
+		if (!this.items.length) this.renderList('没有搜到「' + kw + '」相关内容，换个词试试');
+		else this.renderList();
+	}
+
+	async loadTab(key, sub) {
 		const nav = this.navs.find((n) => n.key === key);
+		if (!nav) return;
+		this.tab = key;
+		this.searchQuery = null;
+		this.sub = sub || (nav.subs ? nav.subs[0].key : null);
+		this.items = [];
 		this.contentEl.querySelectorAll('button.scys-tab').forEach((b) => {
 			const isActive = b.textContent === nav.label;
 			b.toggleClass('scys-tab-active', isActive);
 		});
+		this.renderSubBar();
+		const loader = (nav.subs || []).find((s) => s.key === this.sub) || nav;
 		this.renderList('加载中…');
 		this.loading = true;
 		try {
-			this.items = (await nav.load()) || [];
+			this.items = (await loader.load()) || [];
 		} catch (e) {
 			new Notice('加载失败：' + e.message, 6000);
 			this.renderList('加载失败：' + e.message);
@@ -465,6 +552,17 @@ class ScysRadarView extends ItemView {
 		return hits;
 	}
 
+	emptyText() {
+		if (this.tab === 'sail') return '暂无进行中的航海 · 可在设置里打开「航海显示已结束」翻往期';
+		if (this.tab === 'party') {
+			return this.sub === 'local'
+				? '本地暂无聚会 · 可在设置里改城市，或切到「全国」看看'
+				: '暂无聚会';
+		}
+		if (this.tab === 'proj') return '暂无项目内容';
+		return '暂无内容（或被兴趣过滤掉了）';
+	}
+
 	renderList(emptyMsg) {
 		if (!this.listEl) return;
 		const el = this.listEl;
@@ -478,7 +576,7 @@ class ScysRadarView extends ItemView {
 			return;
 		}
 		if (!items.length) {
-			el.createDiv({ cls: 'scys-empty', text: this.tab === 'sail' ? '暂无相关航海' : '暂无内容（或被兴趣过滤掉了）' });
+			el.createDiv({ cls: 'scys-empty', text: this.emptyText() });
 			return;
 		}
 		for (const it of items) {
@@ -487,6 +585,17 @@ class ScysRadarView extends ItemView {
 			if (it.kind === 'sail') {
 				head.createSpan({ cls: 'scys-badge scys-badge-sail', text: it.typeLabel || '航海' });
 				head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
+			} else if (it.kind === 'party') {
+				head.createSpan({ cls: 'scys-badge scys-badge-party', text: it.typeLabel || '聚会' });
+				head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
+				if (it.place) head.createSpan({ cls: 'scys-place', text: '📍 ' + it.place });
+				const pstats = [it.costText, it.remainText].filter(Boolean);
+				if (pstats.length) head.createSpan({ cls: 'scys-stats', text: pstats.join(' · ') });
+			} else if (it.kind === 'project') {
+				head.createSpan({ cls: 'scys-badge scys-badge-proj', text: it.isSuper ? '超级标的' : '项目' });
+				if (it.incomeText) head.createSpan({ cls: 'scys-income', text: it.incomeText });
+				const jstats = [it.costText, it.timeText, it.caseText].filter(Boolean);
+				if (jstats.length) head.createSpan({ cls: 'scys-stats', text: jstats.join(' · ') });
 			} else {
 				if (it.isDigested) head.createSpan({ cls: 'scys-badge scys-badge-digest', text: '精华' });
 				head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
@@ -612,6 +721,160 @@ class TopicDetailModal extends Modal {
 	}
 }
 
+class ScysSearchModal extends Modal {
+	constructor(app, plugin) {
+		super(app);
+		this.plugin = plugin;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('scys-detail');
+		contentEl.createEl('h3', { text: '搜索生财有术' });
+		const input = contentEl.createEl('input', { cls: 'scys-search-input', attr: { type: 'search', placeholder: '关键词…回车即调 MCP 检索' } });
+		const submit = () => {
+			const kw = String(input.value || '').trim();
+			if (!kw) return;
+			this.close();
+			this.plugin.activateView();
+			setTimeout(() => {
+				const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_SCYS);
+				if (leaves.length && leaves[0].view instanceof ScysRadarView) leaves[0].view.doSearch(kw);
+			}, 150);
+		};
+		input.onkeydown = (e) => {
+			if (e.key === 'Enter') submit();
+		};
+		const btn = contentEl.createEl('button', { text: '搜索', cls: 'mod-cta' });
+		btn.onclick = submit;
+		setTimeout(() => input.focus(), 50);
+	}
+}
+
+class AskYiRenModal extends Modal {
+	constructor(app, plugin, initial) {
+		super(app);
+		this.plugin = plugin;
+		this.initial = initial || '';
+		this.timer = null;
+	}
+
+	onClose() {
+		if (this.timer) clearInterval(this.timer);
+		this.timer = null;
+		this.contentEl.empty();
+	}
+
+	async onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('scys-detail');
+		contentEl.createEl('h3', { text: '问亦仁' });
+		contentEl.createDiv({ cls: 'scys-hint', text: 'AI 亦仁会用亦仁的公开回答与文章作答，生成通常需要 1-2 分钟，请保持窗口打开。' });
+		const ta = contentEl.createEl('textarea', {
+			cls: 'scys-ask-input',
+			attr: { placeholder: '例如：一个人做 AI 工具，当下最值得押注的方向是什么？' },
+		});
+		if (this.initial) ta.value = this.initial;
+		const actions = contentEl.createDiv({ cls: 'scys-ask-actions' });
+		const askBtn = actions.createEl('button', { text: '提问', cls: 'mod-cta' });
+		const statusEl = contentEl.createDiv({ cls: 'scys-ask-status' });
+		const ansEl = contentEl.createDiv({ cls: 'scys-ask-answer' });
+		let busy = false;
+		const stop = () => {
+			if (this.timer) clearInterval(this.timer);
+			this.timer = null;
+		};
+
+		askBtn.onclick = async () => {
+			if (busy) return;
+			const question = String(ta.value || '').trim();
+			if (!question) {
+				new Notice('请输入你的问题', 4000);
+				return;
+			}
+			busy = true;
+			askBtn.disabled = true;
+			stop();
+			ansEl.empty();
+			statusEl.setText('已提交给 AI 亦仁，正在生成…');
+			try {
+				const c = await this.plugin.readyClient();
+				const st = await c.callTool('startAiYiRenChat', { userQuestion: question });
+				const sid = st && (st.userAiChatSessionId || st.sessionId);
+				if (!sid) {
+					statusEl.setText('未能开启会话：' + JSON.stringify(st || {}).slice(0, 200));
+					busy = false;
+					askBtn.disabled = false;
+					return;
+				}
+				let tries = 0;
+				this.timer = setInterval(async () => {
+					tries += 1;
+					if (tries > 100) {
+						stop();
+						statusEl.setText('等待超时（5 分钟），请重试或到生财 App 查看');
+						busy = false;
+						askBtn.disabled = false;
+						return;
+					}
+					try {
+						const r = await c.callTool('queryAiYiRenChat', { userAiChatSessionId: sid });
+						const it = ((r && r.items) || [])[0];
+						const ans = it && it.generateAnswer;
+						if (ans) {
+							stop();
+							await this.renderAnswer(ansEl, question, ans, it);
+							statusEl.setText('已生成于 ' + new Date().toLocaleTimeString('zh-CN'));
+							busy = false;
+							askBtn.disabled = false;
+						} else if (tries % 5 === 0) {
+							statusEl.setText('还在生成…（已等待 ' + tries * 3 + ' 秒）');
+						}
+					} catch (e) {
+						if (tries % 5 === 0) statusEl.setText('仍在等待回答…（' + e.message + '）');
+					}
+				}, 3000);
+			} catch (e) {
+				statusEl.setText('提问失败：' + e.message);
+				busy = false;
+				askBtn.disabled = false;
+			}
+		};
+	}
+
+	async renderAnswer(el, question, answer, item) {
+		el.empty();
+		el.createEl('h4', { text: 'Q：' + question });
+		const bodyEl = el.createDiv({ cls: 'scys-ask-body' });
+		try {
+			await window.MarkdownRenderer.render(this.app, String(answer || ''), bodyEl, '', this.plugin);
+		} catch (e) {
+			bodyEl.setText(String(answer || ''));
+		}
+		const refs = ((item && item.relationEntitySet) || []).slice(0, 8);
+		if (refs.length) {
+			const box = el.createDiv({ cls: 'scys-refs' });
+			box.createEl('h5', { text: '参考原帖' });
+			for (const r of refs) {
+				const a = box.createEl('a', { text: r.entityTitle || '(无标题)', href: r.titleUrl || '#' });
+				a.setAttr('target', '_blank');
+				a.setAttr('rel', 'noopener');
+				box.createEl('br');
+			}
+		}
+		const foot = el.createDiv({ cls: 'scys-ask-foot' });
+		const saveBtn = foot.createEl('button', { text: '⭐ 存为笔记', cls: 'scys-mini-btn scys-save-btn' });
+		saveBtn.onclick = () => {
+			this.plugin.saveAsNote(
+				{ kind: 'yiren', entityId: null, url: '', title: '问亦仁：' + String(question || '').slice(0, 40), author: 'AI 亦仁', dateText: '', summary: '' },
+				{ title: '问亦仁：' + question, author: 'AI 亦仁', date: '', content: answer, url: '' }
+			);
+		};
+	}
+}
+
 class ScysRadarSettingTab extends PluginSettingTab {
 	constructor(app, plugin) {
 		super(app, plugin);
@@ -652,6 +915,36 @@ class ScysRadarSettingTab extends PluginSettingTab {
 					this.plugin.settings.hotPageSize = n;
 					await this.plugin.saveSettings();
 				}
+			})
+		);
+		new Setting(containerEl).setName('航海显示已结束').setDesc('默认只看「即将开放 / 报名中 / 进行中」；打开后可翻阅全部历史航海（约 380 条、37 期），便于回溯往期选题').addToggle((t) =>
+			t.setValue(!!this.plugin.settings.sailIncludeFinished).onChange(async (v) => {
+				this.plugin.settings.sailIncludeFinished = v;
+				await this.plugin.saveSettings();
+			})
+		);
+		new Setting(containerEl).setName('本地聚会 · 省').setDesc('「聚会 → 本地」按此精确匹配，需与生财里的写法一致，如「广东省」').addText((t) =>
+			t.setValue(this.plugin.settings.partyProvince || '').onChange(async (v) => {
+				this.plugin.settings.partyProvince = v.trim();
+				await this.plugin.saveSettings();
+			})
+		);
+		new Setting(containerEl).setName('本地聚会 · 市').setDesc('如「武汉市」').addText((t) =>
+			t.setValue(this.plugin.settings.partyCity || '').onChange(async (v) => {
+				this.plugin.settings.partyCity = v.trim();
+				await this.plugin.saveSettings();
+			})
+		);
+		new Setting(containerEl).setName('本地聚会 · 区（可选）').setDesc('留空则匹配全市，例如写「南山区」只盯着一个区').addText((t) =>
+			t.setValue(this.plugin.settings.partyDistrict || '').onChange(async (v) => {
+				this.plugin.settings.partyDistrict = v.trim();
+				await this.plugin.saveSettings();
+			})
+		);
+		new Setting(containerEl).setName('聚会只看还没开始的').setDesc('关闭后可看到已经办完的聚会').addToggle((t) =>
+			t.setValue(!!this.plugin.settings.partyOnlyFuture).onChange(async (v) => {
+				this.plugin.settings.partyOnlyFuture = v;
+				await this.plugin.saveSettings();
 			})
 		);
 		new Setting(containerEl)
@@ -696,6 +989,8 @@ class ScysRadarPlugin extends Plugin {
 			this.addRibbonIcon('radar', '生财雷达', () => this.activateView().catch((e) => this.fatal('activateView', e)));
 			this.addCommand({ id: 'open-scys-radar', name: '打开生财雷达', callback: () => this.activateView().catch((e) => this.fatal('activateView', e)) });
 			this.addCommand({ id: 'scys-refresh-hot', name: '刷新热门榜', callback: () => this.refreshFromAnywhere() });
+			this.addCommand({ id: 'scys-search', name: '搜索生财正文', callback: () => this.openSearchPrompt() });
+			this.addCommand({ id: 'scys-ask-yiren', name: '问亦仁（AI 分身）', callback: () => this.openAskYiRen('') });
 			this.addSettingTab(new ScysRadarSettingTab(this.app, this));
 			this.log('loaded OK v0.1.0');
 			this.saveData({ bootedAt: new Date().toISOString(), version: "0.1.0" }).catch(function(){});
@@ -819,11 +1114,26 @@ class ScysRadarPlugin extends Plugin {
 
 	async fetchSail() {
 		const c = await this.readyClient();
-		const r = await c.callTool('activityList', { pageIndex: 1, pageSize: 30 });
-		const items = (r && r.items) || [];
 		const order = { 1: 0, 2: 1, 3: 2, 4: 3 };
+		// activityList 的 status 是单值过滤：1即将开放 2报名中 3进行中 4已结束。
+		// 不传 status 时，首页返回的几乎全是已结束的历史航海（占了 380 条里的绝大多数），
+		// 若只在本地 filter 掉 status=4，结果就是 0 条 —— 这正是「航海是空的」的根因。
+		// 因此必须让服务端按 status 过滤，逐个状态取（串行，避免同一 MCP session 并发）。
+		const wantFinished = !!this.settings.sailIncludeFinished;
+		const statuses = wantFinished ? [1, 2, 3, 4] : [1, 2, 3];
+		const list = [];
+		for (const st of statuses) {
+			try {
+				const r = await c.callTool('activityList', { status: st, pageIndex: 1, pageSize: st === 4 ? 30 : 15 });
+				for (const a of (r && r.items) || []) {
+					if (!list.some((x) => x.id === a.id)) list.push(a);
+				}
+			} catch (e) {
+				this.log('fetchSail status=' + st + ' 失败: ' + e.message);
+			}
+		}
+		const items = list.filter((a) => statuses.includes(a.status));
 		return items
-			.filter((a) => [1, 2, 3].includes(a.status))
 			.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || (b.gmtSail || 0) - (a.gmtSail || 0))
 			.map((a) => ({
 				kind: 'sail', entityId: null, url: 'https://scys.com/activity', title: a.name,
@@ -835,8 +1145,129 @@ class ScysRadarPlugin extends Plugin {
 			}));
 	}
 
+	mapTopic(x) {
+		const t = (x && x.topicDTO) || {};
+		return {
+			kind: 'topic', entityId: t.entityId, url: x.detailUrl, title: t.showTitle || '(无标题)',
+			summary: t.articleContent || '', author: ((x.topicUserDTO || {}).name) || '', isDigested: !!t.isDigested,
+			likes: t.likeCount, reads: t.readingCount, dateText: tsToDate(t.gmtCreate), raw: t,
+		};
+	}
+
+	async fetchSearch(kw) {
+		const c = await this.readyClient();
+		const r = await c.callTool('searchTopic', { keyword: kw, displayMode: 1, pageIndex: 1, pageSize: Math.min(this.settings.hotPageSize, 30) });
+		return ((r && r.items) || []).map((x) => this.mapTopic(x));
+	}
+
+	async fetchSuper() {
+		// 「超级标的」= 亦仁发布的【超级标 XX】系列，对应官方标签 menuId 2634453
+		const c = await this.readyClient();
+		const r = await c.callTool('searchTopic', { includeMenuIdList: ['2634453'], displayMode: 1, pageIndex: 1, pageSize: 30 });
+		return ((r && r.items) || []).map((x) => this.mapTopic(x));
+	}
+
+	async fetchParties(scope) {
+		const c = await this.readyClient();
+		const args = { pageIndex: 1, pageSize: 30, partyStatuses: ['APPROVED'] };
+		if (scope === 'local') {
+			const province = String(this.settings.partyProvince || '').trim();
+			const city = String(this.settings.partyCity || '').trim();
+			const district = String(this.settings.partyDistrict || '').trim();
+			if (!city && !province) throw new Error('请先在插件设置里填写「聚会所在省份 / 城市」');
+			if (province) args.province = province;
+			if (city) args.city = city;
+			if (district) args.district = district;
+		}
+		if (this.settings.partyOnlyFuture) args.startTimeFrom = Math.floor(Date.now() / 1000);
+		const r = await c.callTool('searchParties', args);
+		const items = (r && r.items) || [];
+		return items
+			.sort((a, b) => (a.startTime || 0) - (b.startTime || 0))
+			.map((p) => {
+				const place = [p.province === p.city ? null : p.province, p.city, p.district].filter(Boolean).join(' · ');
+				const cost = p.avgCost == null ? '' : Number(p.avgCost) > 0 ? '¥' + p.avgCost : '免费';
+				const remain = p.full ? '已报满' : p.remainStock != null ? '余 ' + p.remainStock + ' 位' : '';
+				return {
+					kind: 'party', entityId: p.partyId, url: p.url || 'https://scys.com/meeting/detail?id=' + p.partyId,
+					title: p.name || '(无标题)', summary: stripMd(p.description || '', 140),
+					typeLabel: p.typeText || '聚会', place, costText: cost, remainText: remain,
+					dateText: tsToDate(p.startTime) + (p.submitEnd ? ' · 报名截止 ' + tsToDate(p.submitEnd) : ''),
+					isDigested: !!p.isDigested, author: '', likes: null, reads: null, raw: p,
+				};
+			});
+	}
+
+	async fetchProjectLib() {
+		const c = await this.readyClient();
+		const r = await c.callTool('projectLibList', { sortType: 'latest', pageIndex: 1, pageSize: 30 });
+		const items = (r && r.items) || [];
+		return items.map((p) => {
+			const tags = [].concat(p.platformMenus || [], p.monetizeMenus || [], p.crowdMenus || []).map((m) => m && m.name).filter(Boolean);
+			const income = p.incomeMin != null && p.incomeMax != null ? '¥' + p.incomeMin + '~' + p.incomeMax + ' / 月' : '';
+			const parts = [p.summary || '', p.highlightText ? '（' + p.highlightText + '）' : '', tags.length ? tags.join(' / ') : ''].filter(Boolean).join(' · ');
+			return {
+				kind: 'project', entityId: String(p.id), url: 'https://scys.com/projectLib/detail?id=' + p.id,
+				title: p.name || '(未命名项目)', summary: parts, incomeText: income,
+				costText: p.estimatedCost == null ? '' : Number(p.estimatedCost) > 0 ? '启动 ¥' + p.estimatedCost : '零成本起步',
+				timeText: p.dailyMinutes ? '每天约 ' + Math.round((p.dailyMinutes / 60) * 10) / 10 + ' 小时' : '',
+				caseText: p.caseCount ? p.caseCount + ' 个实操案例' : '',
+				isSuper: !!p.isSuper, author: '', likes: p.likeCount, reads: null,
+				dateText: tsToDate(p.gmtPublish), isDigested: false, raw: p,
+			};
+		});
+	}
+
+	async openAskYiRen(initial) {
+		new AskYiRenModal(this.app, this, initial || '').open();
+	}
+
+	openSearchPrompt() {
+		new ScysSearchModal(this.app, this).open();
+	}
+
+	openSettings() {
+		try {
+			const setting = this.app.setting;
+			setting.open();
+			setting.openTabById(this.manifest.id);
+		} catch (e) {
+			new Notice('请到 设置 → 第三方插件 → Scys Radar 里修改', 6000);
+		}
+	}
+
 	async fetchDetail(item) {
 		const c = await this.readyClient();
+		if (item.kind === 'party') {
+			try {
+				const r = await c.callTool('getPartyDetail', { partyId: String(item.entityId) });
+				const p = (r && (r.partyDTO || r.party || r)) || {};
+				return {
+					title: p.name || item.title, author: (((r && (r.hostUserDTO || r.host)) || {}).name) || '',
+					date: item.dateText, likes: null, reads: null,
+					content: String(p.description || p.detailDesc || item.summary || ''),
+					url: p.url || item.url,
+				};
+			} catch (e) {
+				const p = (item.raw || {});
+				return { title: item.title, author: '', date: item.dateText, likes: null, reads: null, content: String(p.description || item.summary || ''), url: item.url };
+			}
+		}
+		if (item.kind === 'project') {
+			const p = item.raw || {};
+			const tags = [].concat(p.platformMenus || [], p.monetizeMenus || [], p.crowdMenus || []).map((m) => m && m.name).filter(Boolean);
+			const lines = [
+				p.summary || '',
+				p.highlightText ? '亮点：' + p.highlightText : '',
+				tags.length ? '标签：' + tags.join(' / ') : '',
+				p.incomeMin != null ? '月收入区间：¥' + p.incomeMin + ' ~ ¥' + p.incomeMax : '',
+				p.estimatedCost != null ? '启动资金：¥' + p.estimatedCost : '',
+				p.dailyMinutes ? '每天投入：' + p.dailyMinutes + ' 分钟' : '',
+				p.caseCount ? '实操案例：' + p.caseCount + ' 个' : '',
+				p.resourceCount ? '学习资源：' + p.resourceCount + ' 份' : '',
+			].filter(Boolean).join('\n\n');
+			return { title: p.name || item.title, author: '', date: item.dateText, likes: p.likeCount, reads: null, content: lines, url: item.url };
+		}
 		const r = await c.callTool('topicDetail', { entityType: item.raw.entityType || 'xq_topic', entityId: item.entityId });
 		const t = (r && (r.topicDTO || r)) || {};
 		return {

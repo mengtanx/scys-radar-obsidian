@@ -240,3 +240,143 @@
 .theme-dark .scys-hl {
 	background: rgba(255, 183, 77, 0.25);
 }
+
+/* ---- v0.2.0: 搜索行 / 二级 tab / 聚会 / 项目 / 问亦仁 ---- */
+
+.scys-hidden {
+	display: none;
+}
+
+.scys-searchrow {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	padding: 0 4px 8px;
+}
+
+.scys-search-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	padding: 5px 9px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-modifier-form-field);
+	color: var(--text-normal);
+	font-size: var(--font-ui-smaller);
+}
+
+.scys-search-input:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+}
+
+.scys-toolbar-2 {
+	padding-top: 6px;
+	border-top: none;
+}
+
+.scys-subtoolbar {
+	display: flex;
+	gap: 6px;
+	padding: 2px 4px 8px;
+	flex-wrap: wrap;
+}
+
+.scys-subtab {
+	padding: 3px 10px;
+	border-radius: 999px;
+	border: 1px solid var(--background-modifier-border);
+	background: transparent;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+}
+
+.scys-subtab:hover {
+	color: var(--text-normal);
+}
+
+.scys-subtab-active {
+	background: var(--interactive-accent);
+	color: var(--interactive-accent-text);
+	border-color: var(--interactive-accent);
+}
+
+.scys-badge-party {
+	background: rgba(29, 158, 117, 0.12);
+	color: var(--color-green, #1d9e75);
+}
+
+.scys-badge-proj {
+	background: rgba(83, 74, 183, 0.12);
+	color: var(--color-purple, #534ab7);
+}
+
+.scys-place {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.scys-income {
+	color: var(--text-accent);
+	font-size: var(--font-ui-smaller);
+	font-weight: 500;
+}
+
+.scys-ask-input {
+	width: 100%;
+	min-height: 68px;
+	margin: 8px 0 10px;
+	padding: 8px 10px;
+	border-radius: 8px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-modifier-form-field);
+	color: var(--text-normal);
+	font-size: var(--font-ui-medium);
+	resize: vertical;
+}
+
+.scys-ask-actions {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+
+.scys-ask-status {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	margin-bottom: 8px;
+}
+
+.scys-ask-answer {
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 10px;
+}
+
+.scys-ask-body {
+	font-size: var(--font-ui-medium);
+	line-height: 1.65;
+}
+
+.scys-refs {
+	margin-top: 14px;
+	padding-top: 8px;
+	border-top: 1px dashed var(--background-modifier-border);
+}
+
+.scys-refs h5 {
+	margin: 0 0 6px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.scys-refs a {
+	font-size: var(--font-ui-smaller);
+}
+
+.scys-ask-foot {
+	display: flex;
+	gap: 8px;
+	padding-top: 10px;
+	border-top: 1px solid var(--background-modifier-border);
+}
