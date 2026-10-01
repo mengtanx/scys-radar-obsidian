@@ -33,14 +33,20 @@
 
 ## 安装
 
-### 方式一：BRAT（推荐，官方市场审核中）
+### 方式一：社区插件市场（推荐）
+
+1. 打开 Obsidian **设置** → **第三方插件** → **社区插件**
+2. 搜索 `scys`
+3. 安装并启用 **Scys Radar**
+
+### 方式二：BRAT（抢先体验版）
 
 1. 安装 [BRAT](https://github.com/TfTHacker/obsidian42-brat) 插件
 2. 命令面板 → `BRAT: Add a beta plugin for testing`
 3. 输入 `zackzhangkai/scys-radar-obsidian`
 4. 启用「Scys Radar」
 
-### 方式二：手动安装
+### 方式三：手动安装
 
 1. 从 [Releases](https://github.com/zackzhangkai/scys-radar-obsidian/releases) 下载 `main.js`、`manifest.json`、`styles.css`
 2. 放到 `<你的库>/.obsidian/plugins/scys-radar/`
