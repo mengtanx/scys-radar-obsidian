@@ -128,6 +128,14 @@ interest_tags: [AI, 独立开发]
 - 微信号：`zk_0123456789`
 - 群内常聊：AI 编程、独立开发、Obsidian 工作流、生财情报互通
 
+### 关注我 / 我的其他作品
+
+| 渠道 | 地址 | 内容 |
+|---|---|---|
+| 📝 公众号 | **Zack说AI** | 大厂程序员转独立开发者，分享 AI 技术与做产品的真实过程 |
+| ✍️ 个人博客 | <https://zackzhangkai.github.io> | 技术文章归档，与公众号同步更新 |
+| 📚 CoderFather | <https://coderfather.com> | AI 实战书柜，《AI Agent 全栈实战》等图文课程免费在线阅读 |
+
 ## License
 
 [MIT](LICENSE) © [Zack](https://github.com/zackzhangkai)
