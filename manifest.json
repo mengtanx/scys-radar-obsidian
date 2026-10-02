@@ -1,7 +1,7 @@
 {
   "id": "scys-radar",
   "name": "Scys Radar",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "minAppVersion": "1.5.0",
   "description": "生财有术 MCP 雷达：热门、项目、中标、超级标的、Token 榜单与聚会，支持搜索、问亦仁和一键收藏。Scys (shengcaiyoushu) MCP community radar.",
   "author": "zackzhangkai",

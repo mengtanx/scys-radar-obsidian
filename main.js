@@ -485,7 +485,7 @@ class ScysRadarView extends ItemView {
 		const cfgBtn = row2.createEl('button', { text: '⚙️', cls: 'scys-mini-btn' });
 		cfgBtn.onclick = () => this.plugin.openSettings();
 		const shareBtn = row2.createEl('button', { text: '分享 Token', cls: 'scys-mini-btn' });
-		shareBtn.onclick = () => this.plugin.openTokenShare();
+		shareBtn.onclick = () => this.plugin.shareMyToken();
 
 		this.listEl = root.createDiv({ cls: 'scys-list' });
 		this.statusEl = root.createDiv({ cls: 'scys-status' });
@@ -571,7 +571,7 @@ class ScysRadarView extends ItemView {
 				: '暂无聚会';
 		}
 		if (this.tab === 'proj') return '暂无项目内容';
-		if (this.tab === 'hit') return '暂无中标内容';
+		if (this.tab === 'board') return '暂无榜单数据';
 		return '暂无内容（或被兴趣过滤掉了）';
 	}
 
@@ -598,8 +598,12 @@ class ScysRadarView extends ItemView {
 				head.createSpan({ cls: 'scys-badge scys-badge-rank', text: '第 ' + it.rank + ' 名' });
 				head.createSpan({ cls: 'scys-stats', text: '⚡ ' + formatTokens(it.tokens) + ' Token' });
 			} else if (it.kind === 'board') {
-				head.createSpan({ cls: 'scys-badge scys-badge-board', text: it.typeLabel });
-				head.createSpan({ cls: 'scys-date', text: it.dateText });
+				head.createSpan({ cls: 'scys-badge scys-badge-board', text: it.typeLabel || '榜单' });
+				head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
+				const stats = [];
+				if (it.anchorCount) stats.push('⚓ ' + it.anchorCount);
+				if (it.likes) stats.push('👍 ' + it.likes);
+				if (stats.length) head.createSpan({ cls: 'scys-stats', text: stats.join(' · ') });
 			} else if (it.kind === 'sail') {
 				head.createSpan({ cls: 'scys-badge scys-badge-sail', text: it.typeLabel || '航海' });
 				head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
@@ -896,21 +900,6 @@ class AskYiRenModal extends Modal {
 	}
 }
 
-class TokenShareModal extends Modal {
-	constructor(app, plugin) { super(app); this.plugin = plugin; }
-	onOpen() {
-		const el = this.contentEl;
-		el.empty(); el.addClass('scys-token-share');
-		el.createEl('h3', { text: '分享我的 Token 消耗' });
-		el.createEl('p', { text: 'Token 数据与公开范围由生财官方排行榜管理；插件不会读取、导出或分享你的 OAuth Token。' });
-		const qr = el.createEl('img', { cls: 'scys-token-share-qr', attr: { alt: 'Zack 的个人微信二维码' } });
-		qr.src = this.plugin.app.vault.adapter.getResourcePath(this.plugin.manifest.dir + '/assets/wechat-qr.png');
-		el.createDiv({ cls: 'scys-hint', text: '扫码加 Zack，交流 AI 编程、Obsidian 与生财情报。' });
-		const open = el.createEl('button', { text: '打开我的官方 Token 页面', cls: 'scys-mini-btn scys-save-btn' });
-		open.onclick = () => window.open('https://scys.com/tokenrank/', '_blank');
-	}
-}
-
 class ScysRadarSettingTab extends PluginSettingTab {
 	constructor(app, plugin) {
 		super(app, plugin);
@@ -1011,7 +1000,14 @@ class ScysRadarSettingTab extends PluginSettingTab {
 }
 
 class ScysRadarPlugin extends Plugin {
-	openTokenShare() { new TokenShareModal(this.app, this).open(); }
+	shareMyToken() {
+		const url = this.tokenProfile && this.tokenProfile.shareUrl;
+		if (!url) {
+			new Notice('请先打开「Token 榜」加载你的官方排名，再分享。');
+			return;
+		}
+		window.open(url, '_blank');
+	}
 	async onload() {
 		try {
 			await this.loadSettings();
@@ -1213,17 +1209,37 @@ class ScysRadarPlugin extends Plugin {
 	}
 
 	async fetchTokenRank() {
-		const r = await requestUrlSafe({ url: this.settings.tokenRankEndpoint + '?range=7d&board=total&metric=total&limit=30' });
-		if (!r || r.status !== 0) throw new Error((r && r.message) || 'Token 榜单暂时不可用');
-		return (r.entries || []).map((x) => ({ kind: 'rank', rank: x.rank, tokens: x.score, title: x.name || '匿名用户', summary: '主力工具：' + Object.keys(x.byTool || {}).join(' / ') + (x.primaryModel ? ' · ' + x.primaryModel : ''), author: '', url: 'https://scys.com/tokenrank/u/' + x.userId }));
+		const accessToken = await this.oauth.validToken();
+		const headers = accessToken ? { Authorization: 'Bearer ' + accessToken } : {};
+		const base = this.settings.tokenRankEndpoint;
+		const [mine, r] = await Promise.all([
+			requestUrlSafe({ url: 'https://scys.com/tokenrank/api/subapp/me-lab?range=7d', headers }),
+			requestUrlSafe({ url: base + '?range=7d&board=total&metric=total&limit=30', headers }),
+		]);
+		if (mine && mine.status === -401) throw new Error('Token 排行榜尚未识别当前生财账户，请在官网完成 Token 排行榜登录后重试。');
+		if (!mine || mine.status !== 0 || !r || r.status !== 0) throw new Error((mine && mine.message) || (r && r.message) || 'Token 榜单暂时不可用');
+		const me = mine.user || mine.profile || mine;
+		const myRank = r.myRank || mine.rank || {};
+		const userId = me.userId || me.id || mine.userId;
+		const myItem = {
+			kind: 'rank', rank: myRank.rank || '—', tokens: myRank.score || (mine.kpi && mine.kpi.total) || mine.total || 0,
+			title: (me.name || mine.name || '我') + '（我）', summary: '当前已登录账户 · ' + (myRank.rank ? '近 7 天第 ' + myRank.rank + ' 名' : '暂未进入榜单'), author: '',
+			url: userId ? 'https://scys.com/tokenrank/u/' + userId + '?range=7d' : 'https://scys.com/tokenrank/',
+		};
+		this.tokenProfile = { shareUrl: myItem.url, userId };
+		const entries = (r.entries || []).filter((x) => !userId || x.userId !== userId).map((x) => ({ kind: 'rank', rank: x.rank, tokens: x.score, title: x.name || '匿名用户', summary: '主力工具：' + Object.keys(x.byTool || {}).join(' / ') + (x.primaryModel ? ' · ' + x.primaryModel : ''), author: '', url: 'https://scys.com/tokenrank/u/' + x.userId }));
+		return [myItem].concat(entries);
 	}
 
 	async fetchContentBoards() {
-		return [
-			{ kind: 'board', typeLabel: '锚点榜 · 周榜', title: '锚点榜 · 周榜', summary: '查看本周圈友投锚的优质内容与机会信号。', dateText: '每周更新', url: 'https://scys.com/' },
-			{ kind: 'board', typeLabel: '总投锚榜', title: '总投锚榜', summary: '查看累计获得最多投锚的内容。', dateText: '累计榜单', url: 'https://scys.com/' },
-			{ kind: 'board', typeLabel: '文章点赞榜', title: '文章点赞榜', summary: '查看获得最多点赞的生财文章。', dateText: '内容热度', url: 'https://scys.com/' },
-		];
+		const [fxb, hot] = await Promise.all([this.fetchFxb(), this.fetchHot()]);
+		const anchor = (x) => Number((x.raw && (x.raw.anchorCount || x.raw.anchorNum || x.raw.voteCount)) || 0);
+		const weekStart = Date.now() - 7 * 86400000;
+		const createdAt = (x) => { const n = Number(x.raw && x.raw.gmtCreate) || 0; return n < 1e12 ? n * 1000 : n; };
+		const weekly = fxb.filter((x) => createdAt(x) >= weekStart).sort((a, b) => anchor(b) - anchor(a)).slice(0, 10).map((x) => ({ ...x, kind: 'board', typeLabel: '锚点榜 · 周榜', anchorCount: anchor(x) }));
+		const total = fxb.slice().sort((a, b) => anchor(b) - anchor(a)).slice(0, 10).map((x) => ({ ...x, kind: 'board', typeLabel: '总投锚榜', anchorCount: anchor(x) }));
+		const likes = hot.slice().sort((a, b) => Number(b.likes || 0) - Number(a.likes || 0)).slice(0, 10).map((x) => ({ ...x, kind: 'board', typeLabel: '文章点赞榜' }));
+		return weekly.concat(total, likes);
 	}
 
 	async fetchParties(scope) {
