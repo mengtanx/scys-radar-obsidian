@@ -182,6 +182,13 @@ async function requestUrlSafe(opts) {
 	return res.json;
 }
 
+async function requestUrlJson(opts) {
+	const { requestUrl } = require('obsidian');
+	const res = await requestUrl({ ...opts, throw: false });
+	if (res.json) return res.json;
+	try { return JSON.parse(res.text || '{}'); } catch { return { status: res.status, message: String(res.text || '') }; }
+}
+
 function rand(n = 32) {
 	let s = '';
 	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
@@ -1213,8 +1220,8 @@ class ScysRadarPlugin extends Plugin {
 		const headers = accessToken ? { Authorization: 'Bearer ' + accessToken } : {};
 		const base = this.settings.tokenRankEndpoint;
 		const [mine, r] = await Promise.all([
-			requestUrlSafe({ url: 'https://scys.com/tokenrank/api/subapp/me-lab?range=7d', headers }),
-			requestUrlSafe({ url: base + '?range=7d&board=total&metric=total&limit=30', headers }),
+			requestUrlJson({ url: 'https://scys.com/tokenrank/api/subapp/me-lab?range=7d', headers }),
+			requestUrlJson({ url: base + '?range=7d&board=total&metric=total&limit=30', headers }),
 		]);
 		if (mine && mine.status === -401) throw new Error('Token 排行榜尚未识别当前生财账户，请在官网完成 Token 排行榜登录后重试。');
 		if (!mine || mine.status !== 0 || !r || r.status !== 0) throw new Error((mine && mine.message) || (r && r.message) || 'Token 榜单暂时不可用');
