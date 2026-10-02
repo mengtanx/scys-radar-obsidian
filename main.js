@@ -998,6 +998,7 @@ class ScysRadarSettingTab extends PluginSettingTab {
 					this.plugin.oauth.accessToken = null;
 					this.plugin.oauth.refreshToken = null;
 					this.plugin.oauth.clientId = null;
+					this.plugin.oauth.expiresAt = 0;
 					await this.plugin.saveSettings();
 					new Notice('已断开');
 					this.display();
@@ -1032,8 +1033,7 @@ class ScysRadarPlugin extends Plugin {
 			this.addCommand({ id: 'scys-search', name: '搜索生财正文', callback: () => this.openSearchPrompt() });
 			this.addCommand({ id: 'scys-ask-yiren', name: '问亦仁（AI 分身）', callback: () => this.openAskYiRen('') });
 			this.addSettingTab(new ScysRadarSettingTab(this.app, this));
-			this.log('loaded OK v0.1.0');
-			this.saveData({ bootedAt: new Date().toISOString(), version: "0.1.0" }).catch(function(){});
+			this.log('loaded OK v' + this.manifest.version);
 		} catch (e) {
 			this.fatal('onload', e);
 			throw e;
