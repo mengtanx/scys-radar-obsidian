@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS = {
 
 const { Plugin, Notice, ItemView, WorkspaceLeaf, Modal, Setting, PluginSettingTab, TFile, Platform } = require('obsidian');
 
-const VIEW_TYPE_SCYS = 'scys-radar-view';
+const VIEW_TYPE_SCYS = 'scys-radar-mx-view';
 
 function tsToDate(ts) {
 	if (!ts) return '';
@@ -52,7 +52,7 @@ class ScysOAuth {
 		this.accessToken = null;
 		this.refreshToken = null;
 		this.expiresAt = 0;
-		this.redirectUri = 'http://127.0.0.1:17419/callback';
+		this.redirectUri = 'http://127.0.0.1:17420/callback';
 	}
 
 	load(d) {
@@ -87,7 +87,7 @@ class ScysOAuth {
 			url: meta.reg,
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ client_name: 'Obsidian Scys Radar', redirect_uris: [this.redirectUri] }),
+			body: JSON.stringify({ client_name: 'Obsidian Scys Radar MX', redirect_uris: [this.redirectUri] }),
 		});
 		this.clientId = r.client_id;
 		return this.clientId;
@@ -286,7 +286,7 @@ class McpClient {
 		const r = await this.rpc('initialize', {
 			protocolVersion: '2025-03-26',
 			capabilities: {},
-			clientInfo: { name: 'obsidian-scys-radar', version: '0.1.0' },
+			clientInfo: { name: 'obsidian-scys-radar-mx', version: '0.3.0' },
 		}, true);
 		await this.rpc('notifications/initialized', {}, true).catch(() => {});
 		return r;
@@ -382,10 +382,10 @@ class ScysRadarView extends ItemView {
 		return VIEW_TYPE_SCYS;
 	}
 	getDisplayText() {
-		return '生财雷达';
+		return '生财雷达 MX';
 	}
 	getIcon() {
-		return 'radar';
+		return 'crosshair';
 	}
 
 	async onOpen() {
@@ -411,13 +411,13 @@ class ScysRadarView extends ItemView {
 
 	renderAuth(root) {
 		const box = root.createDiv({ cls: 'scys-auth' });
-		box.createEl('h3', { text: '生财雷达' });
+		box.createEl('h3', { text: '生财雷达 MX' });
 		box.createEl('p', { text: '连接生财有术 MCP，浏览热门、精华、风向标与航海动态。' });
 		const btn = box.createEl('button', { text: '授权登录生财账号', cls: 'mod-cta' });
 		const status = box.createDiv({ cls: 'scys-auth-status' });
 		const pasteBox = root.createDiv({ cls: 'scys-auth' });
 		pasteBox.createEl('p', { cls: 'scys-hint', text: '如果浏览器授权后一直没跳回来：回到 Chrome，把地址栏里 127.0.0.1 开头的完整网址复制到下面，点完成即可。' });
-		const input = pasteBox.createEl('input', { cls: 'scys-paste-input', attr: { placeholder: '粘贴 http://127.0.0.1:17419/callback?code=... 完整地址或 code 值', type: 'text' } });
+		const input = pasteBox.createEl('input', { cls: 'scys-paste-input', attr: { placeholder: '粘贴 http://127.0.0.1:17420/callback?code=... 完整地址或 code 值', type: 'text' } });
 		const doneBtn = pasteBox.createEl('button', { text: '完成授权', cls: 'scys-mini-btn' });
 		doneBtn.onclick = async () => {
 			doneBtn.disabled = true;
@@ -1027,11 +1027,11 @@ class ScysRadarPlugin extends Plugin {
 			}
 
 			this.registerView(VIEW_TYPE_SCYS, (leaf) => new ScysRadarView(leaf, this));
-			this.addRibbonIcon('radar', '生财雷达', () => this.activateView().catch((e) => this.fatal('activateView', e)));
-			this.addCommand({ id: 'open-scys-radar', name: '打开生财雷达', callback: () => this.activateView().catch((e) => this.fatal('activateView', e)) });
-			this.addCommand({ id: 'scys-refresh-hot', name: '刷新热门榜', callback: () => this.refreshFromAnywhere() });
-			this.addCommand({ id: 'scys-search', name: '搜索生财正文', callback: () => this.openSearchPrompt() });
-			this.addCommand({ id: 'scys-ask-yiren', name: '问亦仁（AI 分身）', callback: () => this.openAskYiRen('') });
+			this.addRibbonIcon('crosshair', '生财雷达 MX', () => this.activateView().catch((e) => this.fatal('activateView', e)));
+			this.addCommand({ id: 'open-scys-radar', name: '打开生财雷达 MX', callback: () => this.activateView().catch((e) => this.fatal('activateView', e)) });
+			this.addCommand({ id: 'scys-refresh-hot', name: '刷新热门榜（MX）', callback: () => this.refreshFromAnywhere() });
+			this.addCommand({ id: 'scys-search', name: '搜索生财正文（MX）', callback: () => this.openSearchPrompt() });
+			this.addCommand({ id: 'scys-ask-yiren', name: '问亦仁（MX）', callback: () => this.openAskYiRen('') });
 			this.addSettingTab(new ScysRadarSettingTab(this.app, this));
 			this.log('loaded OK v' + this.manifest.version);
 		} catch (e) {
@@ -1041,7 +1041,7 @@ class ScysRadarPlugin extends Plugin {
 	}
 
 	log(msg) {
-		console.log('[scys-radar] ' + msg);
+		console.log('[scys-radar-mx] ' + msg);
 		try {
 			const fs = require('fs');
 			fs.appendFileSync(require('path').join(this.manifest.dir, 'plugin.log'), new Date().toISOString() + ' ' + msg + '\n');
@@ -1052,7 +1052,7 @@ class ScysRadarPlugin extends Plugin {
 		const msg = (e && e.stack) || String(e);
 		this.log('FATAL at ' + where + ': ' + msg);
 		try {
-			new Notice('生财雷达错误（' + where + '）：' + String(e && e.message || e).slice(0, 200), 10000);
+			new Notice('生财雷达 MX 错误（' + where + '）：' + String(e && e.message || e).slice(0, 200), 10000);
 		} catch {}
 	}
 
@@ -1314,7 +1314,7 @@ class ScysRadarPlugin extends Plugin {
 			setting.open();
 			setting.openTabById(this.manifest.id);
 		} catch (e) {
-			new Notice('请到 设置 → 第三方插件 → Scys Radar 里修改', 6000);
+			new Notice('请到 设置 → 第三方插件 → Scys Radar MX 里修改', 6000);
 		}
 	}
 

@@ -11,6 +11,8 @@
 
 </div>
 
+> 这是 [mengtanx/scys-radar-obsidian](https://github.com/mengtanx/scys-radar-obsidian) 的个人分支，插件 id 是 `scys-radar-mx`。社区版 `scys-radar` 继续用官方市场安装。维护和合并上游见 [FORK.md](FORK.md)。
+
 ---
 
 ## 这是什么
