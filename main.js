@@ -237,18 +237,116 @@ function normalizeFeed(result) {
 		aborted: !!(result && result.aborted),
 		guestNote: (result && result.guestNote) || '',
 		guestNoteUrl: (result && result.guestNoteUrl) || '',
+		todayOverview: (result && result.todayOverview) || null,
+	};
+}
+
+function primaryToolName(byTool) {
+	let best = '';
+	let bestVal = 0;
+	if (!byTool || typeof byTool !== 'object') return '';
+	for (const key of Object.keys(byTool)) {
+		const n = Number(byTool[key]);
+		if (Number.isFinite(n) && n > bestVal) {
+			bestVal = n;
+			best = key;
+		}
+	}
+	return best;
+}
+
+function primaryToolFromList(tools) {
+	if (Array.isArray(tools)) {
+		let best = '';
+		let bestVal = 0;
+		for (const tool of tools) {
+			const name = tool && (tool.name || tool.tool);
+			const n = Number(tool && (tool.total != null ? tool.total : tool.score));
+			if (name && Number.isFinite(n) && n > bestVal) {
+				bestVal = n;
+				best = String(name);
+			}
+		}
+		return best;
+	}
+	return primaryToolName(tools);
+}
+
+function formatCost(value) {
+	if (value == null || value === '') return '';
+	const n = Number(value);
+	if (!Number.isFinite(n)) return '';
+	if (n >= 100) return '$' + Math.round(n).toLocaleString('en-US');
+	return '$' + n.toFixed(2);
+}
+
+function httpUrl(value) {
+	const s = String(value || '').trim();
+	if (s.startsWith('https://') || s.startsWith('http://')) return s;
+	if (s.startsWith('//')) return 'https:' + s;
+	return '';
+}
+
+function sameUserId(a, b) {
+	return a != null && b != null && String(a) === String(b);
+}
+
+function rankMeta(tool, model) {
+	return [tool, model].filter(Boolean).join(' · ');
+}
+
+function meAvatar(mine) {
+	const me = mine && (mine.user || mine.profile || mine);
+	return httpUrl((me && (me.avatar || me.xq_avatar)) || (mine && (mine.avatar || mine.xq_avatar)));
+}
+
+function syncAgeText(sync) {
+	if (!sync || sync.status !== 0 || sync.state !== 'success') return '';
+	const ms = Date.parse(sync.lastReceived || '');
+	if (!Number.isFinite(ms)) return '';
+	const min = Math.floor((Date.now() - ms) / 60000);
+	if (!Number.isFinite(min) || min < 1) return '刚刚';
+	if (min < 60) return min + ' 分钟前';
+	const hr = Math.floor(min / 60);
+	if (hr < 24) return hr + ' 小时前';
+	const day = Math.floor(hr / 24);
+	return day + ' 天前';
+}
+
+function todayOverviewFrom(today, sync) {
+	if (!today || today.status !== 0 || !today.myRank || typeof today.myRank !== 'object') return null;
+	const row = today.myRank;
+	const rankNum = Number(row.rank);
+	const hasRank = Number.isFinite(rankNum) && rankNum > 0;
+	const score = Number(row.score);
+	const hasScore = Number.isFinite(score);
+	if (!hasRank && !hasScore) return null;
+	const users = today.stats && Number(today.stats.users);
+	return {
+		tokens: hasScore ? score : 0,
+		costText: formatCost(row.cost),
+		rank: hasRank ? String(rankNum) : '',
+		users: Number.isFinite(users) ? users : null,
+		syncText: syncAgeText(sync),
 	};
 }
 
 function mapTokenRankEntry(x) {
+	const tool = primaryToolName(x && x.byTool);
+	const model = (x && x.primaryModel) || '';
 	return {
 		kind: 'rank',
 		rank: x.rank,
 		tokens: x.score,
-		title: x.name || '匿名用户',
-		summary: '主力工具：' + Object.keys(x.byTool || {}).join(' / ') + (x.primaryModel ? ' · ' + x.primaryModel : ''),
+		costText: formatCost(x && x.cost),
+		tool,
+		model,
+		avatar: httpUrl(x && x.avatar),
+		title: (x && x.name) || '匿名用户',
+		summary: rankMeta(tool, model),
 		author: '',
-		url: 'https://scys.com/tokenrank/u/' + x.userId,
+		url: 'https://scys.com/tokenrank/u/' + (x && x.userId),
+		userId: x && x.userId,
 	};
 }
 
@@ -278,15 +376,15 @@ async function readScysCookieHeader() {
 	}
 }
 
-function buildTokenRank(mine, r) {
+function buildTokenRank(mine, r, today, sync) {
 	if (!r || r.status !== 0) throw new Error((r && r.message) || 'Token 榜单暂时不可用');
 	const identified = !!(mine && mine.status === 0);
 	const me = identified ? (mine.user || mine.profile || mine) : null;
 	const userId = me && (me.userId || me.id || mine.userId);
-	const entries = (r.entries || [])
-		.filter((x) => !userId || x.userId !== userId)
-		.map(mapTokenRankEntry);
-	const topLabel = '前 ' + entries.length + ' 名';
+	const mapped = (r.entries || []).map(mapTokenRankEntry);
+	const own = userId ? mapped.find((x) => sameUserId(x.userId, userId)) : null;
+	const entries = mapped.filter((x) => !sameUserId(x.userId, userId));
+	const topLabel = '近 7 天 · 前 ' + entries.length + ' 名';
 	if (!identified) {
 		return {
 			profile: null,
@@ -300,16 +398,23 @@ function buildTokenRank(mine, r) {
 				topLabel,
 				guestNote: TOKEN_GUEST_NOTE,
 				guestNoteUrl: TOKEN_RANK_HOME,
+				todayOverview: null,
 			},
 		};
 	}
 	const myRank = r.myRank || mine.rank || {};
+	const tool = (own && own.tool) || primaryToolFromList(mine.tools || (mine.kpi && mine.kpi.tools));
+	const model = (own && own.model) || '';
 	const myItem = {
 		kind: 'rank',
 		rank: myRank.rank || '—',
 		tokens: myRank.score || (mine.kpi && mine.kpi.total) || mine.total || 0,
+		costText: formatCost(myRank.cost) || (own && own.costText) || formatCost(mine.kpi && mine.kpi.cost),
+		tool,
+		model,
+		avatar: (own && own.avatar) || meAvatar(mine),
 		title: (me.name || mine.name || '我') + '（我）',
-		summary: '当前已登录账户 · ' + (myRank.rank ? '近 7 天第 ' + myRank.rank + ' 名' : '暂未进入榜单'),
+		summary: rankMeta(tool, model),
 		author: '',
 		url: userId ? 'https://scys.com/tokenrank/u/' + userId + '?range=7d' : TOKEN_RANK_HOME,
 	};
@@ -325,6 +430,7 @@ function buildTokenRank(mine, r) {
 			topLabel,
 			guestNote: '',
 			guestNoteUrl: '',
+			todayOverview: todayOverviewFrom(today, sync),
 		},
 	};
 }
@@ -1039,6 +1145,7 @@ class ScysRadarView extends ItemView {
 			return;
 		}
 		const feedNow = this.feed || {};
+		if (feedNow.todayOverview) this.renderTodayOverview(el, feedNow.todayOverview);
 		if (feedNow.guestNote) {
 			const note = el.createEl('button', {
 				cls: 'scys-guest-note',
@@ -1052,6 +1159,10 @@ class ScysRadarView extends ItemView {
 			el.createDiv({ cls: 'scys-empty', text: filteredOut ? '这一页没有感兴趣的帖子，可以翻下一页' : this.emptyText() });
 		}
 		for (const it of items) {
+			if (it.kind === 'rank') {
+				this.renderRankCard(el, it);
+				continue;
+			}
 			const card = el.createDiv({ cls: 'scys-card' + (compact ? ' scys-card-compact' : '') });
 			const postLike = !it.kind || it.kind === 'topic' || it.kind === 'board';
 			if (compact && postLike) {
@@ -1069,12 +1180,7 @@ class ScysRadarView extends ItemView {
 				this.appendActions(foot, it);
 			} else {
 				const head = card.createDiv({ cls: 'scys-card-head' });
-				if (it.kind === 'rank') {
-					head.createSpan({ cls: 'scys-badge scys-badge-rank', text: '第 ' + it.rank + ' 名' });
-					const stats = head.createSpan({ cls: 'scys-stats' });
-					mountIcon(stats, 'bolt');
-					stats.createSpan({ text: formatTokens(it.tokens) + ' Token' });
-				} else if (it.kind === 'board') {
+				if (it.kind === 'board') {
 					head.createSpan({ cls: 'scys-badge scys-badge-board', text: it.typeLabel || '榜单' });
 					head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
 					const stats = head.createSpan({ cls: 'scys-stats' });
@@ -1119,11 +1225,53 @@ class ScysRadarView extends ItemView {
 			}
 			card.onclick = (e) => {
 				if (e.target.closest('button')) return;
-				if ((it.kind === 'rank' || it.kind === 'board') && it.url) window.open(it.url, '_blank');
+				if (it.kind === 'board' && it.url) window.open(it.url, '_blank');
 				else this.plugin.openDetail(it);
 			};
 		}
 		this.renderStatus();
+	}
+
+	renderTodayOverview(el, today) {
+		const box = el.createDiv({ cls: 'scys-today', attr: { 'aria-label': '今日概况' } });
+		box.createDiv({ cls: 'scys-today-title', text: '今日概况' });
+		const grid = box.createDiv({ cls: 'scys-today-grid' });
+		const cell = (label, value) => {
+			const item = grid.createDiv({ cls: 'scys-today-cell' });
+			item.createDiv({ cls: 'scys-today-label', text: label });
+			item.createDiv({ cls: 'scys-today-value', text: value });
+		};
+		cell('今日消耗', formatTokens(today.tokens));
+		if (today.costText) cell('预估费用', today.costText);
+		cell('今日排名', today.rank ? '#' + today.rank : '—');
+		const bits = [];
+		if (today.users != null) bits.push('今日全站 ' + today.users.toLocaleString('en-US') + ' 人参与');
+		if (today.syncText) bits.push('最近同步 ' + today.syncText);
+		if (bits.length) box.createDiv({ cls: 'scys-today-foot', text: bits.join(' · ') });
+	}
+
+	renderRankCard(el, it) {
+		const card = el.createDiv({ cls: 'scys-card' });
+		const row = card.createDiv({ cls: 'scys-rank-row' });
+		row.createSpan({ cls: 'scys-badge scys-badge-rank', text: '第 ' + it.rank + ' 名' });
+		if (it.avatar) {
+			const img = row.createEl('img', { cls: 'scys-avatar', attr: { src: it.avatar, alt: '' } });
+			img.onerror = () => img.remove();
+		}
+		this.mountTitle(row, it.title);
+		const score = row.createDiv({ cls: 'scys-rank-score' });
+		const tokens = score.createSpan({ cls: 'scys-stat' });
+		mountIcon(tokens, 'bolt');
+		tokens.createSpan({ text: formatTokens(it.tokens) + ' Token' });
+		if (it.costText) score.createSpan({ cls: 'scys-rank-cost', text: it.costText });
+		if (it.summary) card.createDiv({ cls: 'scys-rank-meta', text: it.summary });
+		const foot = card.createDiv({ cls: 'scys-card-foot' });
+		foot.createSpan({ cls: 'scys-spacer' });
+		this.appendActions(foot, it);
+		card.onclick = (e) => {
+			if (e.target.closest('button')) return;
+			if (it.url) window.open(it.url, '_blank');
+		};
 	}
 
 	appendActions(foot, it) {
@@ -1793,11 +1941,13 @@ class ScysRadarPlugin extends Plugin {
 		if (cookie) headers.Cookie = cookie;
 		const base = this.settings.tokenRankEndpoint;
 		const size = this.pageArgs().pageSize;
-		const [mine, r] = await Promise.all([
+		const [mine, r, today, sync] = await Promise.all([
 			requestUrlJson({ url: 'https://scys.com/tokenrank/api/subapp/me-lab?range=7d', headers }).catch(() => null),
 			requestUrlJson({ url: base + '?range=7d&board=total&metric=total&limit=' + size, headers }),
+			requestUrlJson({ url: base + '?range=today&board=total&metric=total&limit=1', headers }).catch(() => null),
+			requestUrlJson({ url: 'https://scys.com/tokenrank/api/subapp/connection-status', headers }).catch(() => null),
 		]);
-		const built = buildTokenRank(mine, r);
+		const built = buildTokenRank(mine, r, today, sync);
 		this.tokenProfile = built.profile;
 		this.tokenRankState = built.rankState;
 		return built.feed;
