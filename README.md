@@ -112,8 +112,8 @@ interest_tags: [AI, 独立开发]
 ## 技术实现
 
 - 直连生财官方 MCP（`mcp.scys.com`），JSON-RPC over HTTP，用到这些工具：
-  - `searchTopic` — 热门 / 精华 / 超级标的 / 关键词检索
-  - `contentSearch` — 风向标
+  - `searchTopic` — 热门 / 超级标的
+  - `contentSearch` — 精华 / 关键词检索 / 风向标 / 中标
   - `activityList` — 航海
   - `searchParties` / `getPartyDetail` — 聚会
   - `projectLibList` — 项目库

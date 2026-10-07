@@ -132,6 +132,40 @@
 	color: var(--text-on-accent);
 }
 
+.scys-mini-btn.scys-icon-btn.is-on {
+	background: var(--interactive-normal);
+	color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+}
+
+.scys-mini-btn.scys-icon-btn.is-on:hover {
+	background: var(--interactive-hover);
+}
+
+.scys-select {
+	height: 24px;
+	margin: 0;
+	padding: 0 4px;
+	border-radius: var(--radius-s);
+	border: 1px solid var(--background-modifier-border);
+	background: var(--interactive-normal);
+	color: var(--text-normal);
+	font: inherit;
+	font-size: var(--font-ui-smaller);
+	line-height: 22px;
+	cursor: pointer;
+	flex: 0 0 auto;
+}
+
+.scys-select:hover {
+	background: var(--interactive-hover);
+}
+
+.scys-select:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+}
+
 .scys-list {
 	flex: 1;
 	overflow-y: auto;
@@ -175,8 +209,13 @@
 }
 
 .scys-badge-digest {
-	background: var(--color-accent, #d4a017);
-	color: var(--text-on-accent);
+	background: #fff6de;
+	color: #8a5a00;
+}
+
+.theme-dark .scys-badge-digest {
+	background: rgba(232, 163, 23, 0.22);
+	color: #f6c453;
 }
 
 .scys-badge-sail {
@@ -284,6 +323,26 @@
 	color: var(--text-warning, var(--text-muted));
 }
 
+.scys-guest-note {
+	display: block;
+	width: 100%;
+	margin: 0 0 8px;
+	padding: 6px 2px;
+	border: none;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-warning, var(--text-muted));
+	font: inherit;
+	font-size: var(--font-ui-smaller);
+	line-height: 1.4;
+	text-align: left;
+	cursor: pointer;
+}
+
+.scys-guest-note:hover {
+	color: var(--text-normal);
+}
+
 .scys-page-time {
 	margin-top: 2px;
 	color: var(--text-faint);
@@ -355,11 +414,6 @@
 	padding-top: 10px;
 	border-top: 1px solid var(--background-modifier-border);
 }
-
-.scys-save-btn {
-	border-color: var(--interactive-accent);
-}
-
 
 .theme-dark .scys-hl {
 	background: rgba(255, 183, 77, 0.25);
@@ -453,7 +507,7 @@
 
 .scys-ask-input {
 	width: 100%;
-	min-height: 68px;
+	min-height: 0;
 	margin: 8px 0 10px;
 	padding: 8px 10px;
 	border-radius: 8px;
@@ -461,13 +515,22 @@
 	background: var(--background-modifier-form-field);
 	color: var(--text-normal);
 	font-size: var(--font-ui-medium);
+	line-height: 1.5;
 	resize: vertical;
 }
 
 .scys-ask-actions {
 	display: flex;
+	justify-content: flex-end;
 	gap: 8px;
 	margin-bottom: 10px;
+}
+
+.scys-ask-q {
+	margin: 0 0 8px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	line-height: 1.45;
 }
 
 .scys-ask-status {

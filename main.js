@@ -38,6 +38,7 @@ const ICONS = {
 	search: svgIcon('<circle cx="6.8" cy="6.8" r="3.7"/><path d="m9.6 9.6 3.6 3.6"/>'),
 	ask: svgIcon('<circle cx="6" cy="4.3" r="1.65"/><path d="M3.2 13.5c.3-2.5 1.4-3.8 2.8-3.8s2.5 1.3 2.8 3.8"/><path d="m7.6 10.2 3.2-3.6V4.8h1.8"/>'),
 	target: svgIcon('<circle cx="8" cy="8" r="5.3"/><circle cx="8" cy="8" r="1.35" fill="currentColor" stroke="none"/>'),
+	refresh: svgIcon('<path d="M3.6 6.4A4.7 4.7 0 0 1 11.2 3.7"/><path d="M9.4 2.1 11.6 3.6 9.7 5.6"/><path d="M12.4 9.6A4.7 4.7 0 0 1 4.8 12.3"/><path d="M6.6 10.4 4.4 12.2 6.3 14.2"/>'),
 	gear: '<svg viewBox="0 0 16 16"><mask id="scys-gear"><rect width="16" height="16" fill="#fff"/><circle cx="8" cy="8" r="2.15" fill="#000"/></mask><g mask="url(#scys-gear)" fill="currentColor"><circle cx="8" cy="8" r="3.7"/><rect x="6.7" y="1.15" width="2.6" height="5.4" rx="0.5"/><rect x="6.7" y="1.15" width="2.6" height="5.4" rx="0.5" transform="rotate(60 8 8)"/><rect x="6.7" y="1.15" width="2.6" height="5.4" rx="0.5" transform="rotate(120 8 8)"/><rect x="6.7" y="1.15" width="2.6" height="5.4" rx="0.5" transform="rotate(180 8 8)"/><rect x="6.7" y="1.15" width="2.6" height="5.4" rx="0.5" transform="rotate(240 8 8)"/><rect x="6.7" y="1.15" width="2.6" height="5.4" rx="0.5" transform="rotate(300 8 8)"/></g></svg>',
 	anchor: svgIcon('<circle cx="8" cy="3.5" r="1.45"/><path d="M8 4.95v7.25M5 7.1h6"/><path d="M8 12.2c0 0-4.4.2-4.4-3M8 12.2c0 0 4.4.2 4.4-3"/>'),
 	like: svgIcon('<path d="M4.7 13.4H2.9V7.4h1.8"/><path d="M4.7 8.1 6.8 3.5c.3-.6 1.2-.4 1.3.3l.3 2.6h3.3c.7 0 1.2.6 1 1.3l-1.1 4.6c-.2.6-.7 1.1-1.3 1.1H4.7"/>'),
@@ -116,17 +117,85 @@ function esc(s) {
 
 const PAGE_SIZES = [10, 20, 50];
 const SEARCH_TOPIC_CAP = 10;
+const MAX_RATE_WAITS = 3;
+const MAX_RATE_WAIT_SEC = 60;
 
 function normalizePageSize(n) {
 	const v = Number(n);
 	return PAGE_SIZES.includes(v) ? v : 20;
 }
 
-// searchTopic 每页最多 10 条。视觉上的第 N 页要串行拼若干个 MCP 页。
+// searchTopic 每页最多 10 条。热门、超级标的的视觉页要串行拼若干个 MCP 页。
+// 精华和关键词搜索走 contentSearch，一次请求一页。
 function mcpWindow(visualPage, visualSize, cap) {
 	const page = Math.max(1, Number(visualPage) || 1);
 	const per = Math.max(1, Math.ceil(visualSize / cap));
 	return { start: (page - 1) * per + 1, count: per };
+}
+
+function parseRateLimit(text, mcpError) {
+	const chunks = [];
+	if (text) chunks.push(String(text));
+	if (mcpError && typeof mcpError === 'object') {
+		try { chunks.push(JSON.stringify(mcpError)); } catch {}
+	} else if (mcpError) chunks.push(String(mcpError));
+	const raw = chunks.join('\n');
+	if (!raw || !raw.includes('MCP_RATE_LIMITED')) return null;
+	let wait = null;
+	let toolName = '';
+	const waitMatch = raw.match(/retryAfterSeconds(?:=|":)(\d+)/);
+	if (waitMatch) wait = Number(waitMatch[1]);
+	const toolMatch = raw.match(/toolName(?:=|":)"?([A-Za-z0-9_]+)/);
+	if (toolMatch) toolName = toolMatch[1];
+	try {
+		const j = JSON.parse(String(text || ''));
+		const code = j && (j.code || j.error || j.name);
+		const message = j && j.message ? String(j.message) : '';
+		if (code === 'MCP_RATE_LIMITED' || message.includes('MCP_RATE_LIMITED')) {
+			const w = Number(j.retryAfterSeconds != null ? j.retryAfterSeconds : j.retry_after);
+			if (Number.isFinite(w)) wait = w;
+			if (j.toolName) toolName = String(j.toolName);
+		}
+	} catch {}
+	if (mcpError && typeof mcpError === 'object') {
+		const w = Number(mcpError.retryAfterSeconds != null ? mcpError.retryAfterSeconds : mcpError.retry_after);
+		if (Number.isFinite(w)) wait = w;
+		if (mcpError.toolName) toolName = String(mcpError.toolName);
+	}
+	return { limited: true, retryAfterSeconds: Number.isFinite(wait) ? wait : null, toolName };
+}
+
+function rateLimitMessage(info) {
+	if (info && info.retryAfterSeconds > 0) return '请求过于频繁，约 ' + info.retryAfterSeconds + ' 秒后再试';
+	return '请求过于频繁，请稍后再试';
+}
+
+function staleError() {
+	const err = new Error('已切换');
+	err.stale = true;
+	return err;
+}
+
+function sleepWhileFresh(ms, isStale) {
+	return new Promise((resolve) => {
+		let left = ms;
+		const tick = () => {
+			if (isStale && isStale()) return resolve(false);
+			if (left <= 0) return resolve(true);
+			const step = Math.min(100, left);
+			left -= step;
+			setTimeout(tick, step);
+		};
+		tick();
+	});
+}
+
+function mcpCtx(opts) {
+	return {
+		waitsLeft: (opts && opts.waitsLeft) || { n: MAX_RATE_WAITS },
+		isStale: () => !!(opts && opts.isStale && opts.isStale()),
+		onWait: opts && opts.onWait,
+	};
 }
 
 function relTime(ts) {
@@ -149,6 +218,9 @@ function finiteNum(n) {
 	return Number.isFinite(v) ? v : null;
 }
 
+const TOKEN_RANK_HOME = 'https://scys.com/tokenrank/';
+const TOKEN_GUEST_NOTE = '未登录官网 Token 榜，这里只显示公开排名，看不到我的名次。';
+
 function normalizeFeed(result) {
 	if (Array.isArray(result)) {
 		return { items: result, total: null, hasMore: false, partialNote: '', pager: 'page', topLabel: '' };
@@ -162,6 +234,73 @@ function normalizeFeed(result) {
 		pager: (result && result.pager) || 'page',
 		topLabel: (result && result.topLabel) || '',
 		page: result && result.page,
+		aborted: !!(result && result.aborted),
+		guestNote: (result && result.guestNote) || '',
+		guestNoteUrl: (result && result.guestNoteUrl) || '',
+	};
+}
+
+function mapTokenRankEntry(x) {
+	return {
+		kind: 'rank',
+		rank: x.rank,
+		tokens: x.score,
+		title: x.name || '匿名用户',
+		summary: '主力工具：' + Object.keys(x.byTool || {}).join(' / ') + (x.primaryModel ? ' · ' + x.primaryModel : ''),
+		author: '',
+		url: 'https://scys.com/tokenrank/u/' + x.userId,
+	};
+}
+
+// me-lab 用官网 cookie。插件的 requestUrl 只带 MCP Bearer，失败时仍返回公开榜。
+function buildTokenRank(mine, r) {
+	if (!r || r.status !== 0) throw new Error((r && r.message) || 'Token 榜单暂时不可用');
+	const identified = !!(mine && mine.status === 0);
+	const me = identified ? (mine.user || mine.profile || mine) : null;
+	const userId = me && (me.userId || me.id || mine.userId);
+	const entries = (r.entries || [])
+		.filter((x) => !userId || x.userId !== userId)
+		.map(mapTokenRankEntry);
+	const topLabel = '前 ' + entries.length + ' 名';
+	if (!identified) {
+		return {
+			profile: null,
+			rankState: 'anonymous',
+			feed: {
+				items: entries,
+				total: null,
+				hasMore: false,
+				partialNote: '',
+				pager: 'top',
+				topLabel,
+				guestNote: TOKEN_GUEST_NOTE,
+				guestNoteUrl: TOKEN_RANK_HOME,
+			},
+		};
+	}
+	const myRank = r.myRank || mine.rank || {};
+	const myItem = {
+		kind: 'rank',
+		rank: myRank.rank || '—',
+		tokens: myRank.score || (mine.kpi && mine.kpi.total) || mine.total || 0,
+		title: (me.name || mine.name || '我') + '（我）',
+		summary: '当前已登录账户 · ' + (myRank.rank ? '近 7 天第 ' + myRank.rank + ' 名' : '暂未进入榜单'),
+		author: '',
+		url: userId ? 'https://scys.com/tokenrank/u/' + userId + '?range=7d' : TOKEN_RANK_HOME,
+	};
+	return {
+		profile: { shareUrl: myItem.url, userId },
+		rankState: 'ready',
+		feed: {
+			items: [myItem].concat(entries),
+			total: null,
+			hasMore: false,
+			partialNote: '',
+			pager: 'top',
+			topLabel,
+			guestNote: '',
+			guestNoteUrl: '',
+		},
 	};
 }
 
@@ -397,6 +536,8 @@ class McpClient {
 		this.log = log || (() => {});
 		this.sessionId = null;
 		this.toolDefs = [];
+		this._tail = Promise.resolve();
+		this.onWait = null;
 	}
 
 	async rpc(method, params, isInit = false) {
@@ -413,7 +554,12 @@ class McpClient {
 		const sid = res.headers['mcp-session-id'];
 		if (sid) this.sessionId = sid;
 		const json = parseMcpBody(res.text);
-		if (json && json.error) throw new Error(json.error.message || 'MCP error');
+		if (json && json.error) {
+			const body = json.error;
+			const err = new Error((body && body.message) || (typeof body === 'string' ? body : 'MCP error'));
+			err.mcpError = body;
+			throw err;
+		}
 		return json && json.result;
 	}
 
@@ -433,32 +579,74 @@ class McpClient {
 		return this.toolDefs;
 	}
 
-	async callTool(name, args) {
-		const r = await this.rpc('tools/call', { name, arguments: args });
-		if (!r) return null;
-		if (r.isError) {
-			const text = ((r.content || [])[0] || {}).text || '';
-			let msg = text || '工具执行失败';
+	async callTool(name, args, ctx) {
+		const job = this._tail.then(() => this._callToolBody(name, args, ctx));
+		this._tail = job.then(() => {}, () => {});
+		return job;
+	}
+
+	async _waitRateLimit(info, budget, isStale, onWait) {
+		if (!info || !info.limited || !(info.retryAfterSeconds > 0) || budget.n <= 0) return false;
+		if (isStale()) throw staleError();
+		budget.n -= 1;
+		const sec = Math.min(MAX_RATE_WAIT_SEC, info.retryAfterSeconds);
+		if (onWait) onWait(sec);
+		const fresh = await sleepWhileFresh(sec * 1000, isStale);
+		if (!fresh) throw staleError();
+		return true;
+	}
+
+	async _callToolBody(name, args, ctx) {
+		const budget = (ctx && ctx.waitsLeft) || { n: MAX_RATE_WAITS };
+		const isStale = () => !!(ctx && ctx.isStale && ctx.isStale());
+		const onWait = (sec) => {
+			const fn = (ctx && ctx.onWait) || this.onWait;
+			if (fn) fn(sec);
+		};
+		for (;;) {
+			if (isStale()) throw staleError();
+			let r;
 			try {
-				const j = JSON.parse(text);
-				const code = j && (j.code || j.error || j.name);
-				if (code === 'MCP_RATE_LIMITED') {
-					const wait = j.retryAfterSeconds || j.retry_after;
-					msg = '请求过于频繁' + (wait ? '，约 ' + wait + ' 秒后再翻' : '，请稍后再翻');
-				} else if (j && j.message) msg = j.message;
-			} catch {}
-			throw new Error(msg);
-		}
-		const c = (r.content || [])[0];
-		if (!c) return null;
-		if (c.type === 'text') {
-			try {
-				return JSON.parse(c.text);
-			} catch {
-				return c.text;
+				r = await this.rpc('tools/call', { name, arguments: args });
+			} catch (e) {
+				if (e && e.stale) throw e;
+				const info = parseRateLimit(e && e.message, e && e.mcpError);
+				if (await this._waitRateLimit(info, budget, isStale, onWait)) continue;
+				if (info && info.limited) {
+					const err = new Error(rateLimitMessage(info));
+					err.rateLimited = true;
+					throw err;
+				}
+				throw e;
 			}
+			if (!r) return null;
+			if (r.isError) {
+				const text = ((r.content || [])[0] || {}).text || '';
+				const info = parseRateLimit(text);
+				if (await this._waitRateLimit(info, budget, isStale, onWait)) continue;
+				let msg = text || '工具执行失败';
+				if (info && info.limited) msg = rateLimitMessage(info);
+				else {
+					try {
+						const j = JSON.parse(text);
+						if (j && j.message) msg = j.message;
+					} catch {}
+				}
+				const err = new Error(msg);
+				if (info && info.limited) err.rateLimited = true;
+				throw err;
+			}
+			const c = (r.content || [])[0];
+			if (!c) return null;
+			if (c.type === 'text') {
+				try {
+					return JSON.parse(c.text);
+				} catch {
+					return c.text;
+				}
+			}
+			return c;
 		}
-		return c;
 	}
 }
 
@@ -505,8 +693,8 @@ class ScysRadarView extends ItemView {
 		this.updatedAt = null;
 		this._loadGen = 0;
 		this.navs = [
-			{ key: 'hot', icon: 'flame', label: '热门', load: (page) => this.plugin.fetchHot(page) },
-			{ key: 'good', icon: 'gem', label: '精华', load: (page) => this.plugin.fetchGood(page) },
+			{ key: 'hot', icon: 'flame', label: '热门', load: (page, opts) => this.plugin.fetchHot(page, opts) },
+			{ key: 'good', icon: 'gem', label: '精华', load: (page, opts) => this.plugin.fetchGood(page, opts) },
 			{ key: 'sail', icon: 'sail', label: '航海', load: (page) => this.plugin.fetchSail(page) },
 			{
 				key: 'party', icon: 'pin', label: '聚会',
@@ -519,13 +707,13 @@ class ScysRadarView extends ItemView {
 				key: 'proj', icon: 'compass', label: '项目',
 				subs: [
 					{ key: 'lib', label: '项目库', load: (page) => this.plugin.fetchProjectLib(page) },
-					{ key: 'fxb', label: '风向标', load: (page) => this.plugin.fetchFxb(page) },
-					{ key: 'hit', label: '中标', load: (page) => this.plugin.fetchWinBid(page) },
-					{ key: 'super', label: '超级标的', load: (page) => this.plugin.fetchSuper(page) },
+					{ key: 'fxb', label: '风向标', load: (page, opts) => this.plugin.fetchFxb(page, opts) },
+					{ key: 'hit', label: '中标', load: (page, opts) => this.plugin.fetchWinBid(page, opts) },
+					{ key: 'super', label: '超级标的', load: (page, opts) => this.plugin.fetchSuper(page, opts) },
 				],
 			},
 			{ key: 'token', icon: 'bars', label: 'Token 榜', load: () => this.plugin.fetchTokenRank() },
-			{ key: 'board', icon: 'medal', label: '榜单', load: () => this.plugin.fetchContentBoards() },
+			{ key: 'board', icon: 'medal', label: '榜单', load: (_page, opts) => this.plugin.fetchContentBoards(opts) },
 		];
 	}
 
@@ -629,28 +817,42 @@ class ScysRadarView extends ItemView {
 		this.renderSubBar();
 
 		const row2 = root.createDiv({ cls: 'scys-toolbar scys-toolbar-2' });
-		const size = normalizePageSize(this.plugin.settings.pageSize);
-		for (const n of PAGE_SIZES) {
-			const b = row2.createEl('button', { text: String(n), cls: 'scys-mini-btn scys-size-btn', attr: { 'data-page-size': String(n), title: '每页 ' + n + ' 条' } });
-			if (n === size) b.addClass('is-on');
-			b.onclick = () => this.setPageSize(n);
-		}
-		const mode = this.plugin.settings.listMode === 'compact' ? 'compact' : 'brief';
-		const briefBtn = row2.createEl('button', { text: '简洁', cls: 'scys-mini-btn', attr: { 'data-list-mode': 'brief', title: '标题、摘要和阅读数' } });
-		const compactBtn = row2.createEl('button', { text: '精简', cls: 'scys-mini-btn', attr: { 'data-list-mode': 'compact', title: '只留标题和作者、时间、锚、赞、评论' } });
-		if (mode === 'brief') briefBtn.addClass('is-on');
-		else compactBtn.addClass('is-on');
-		briefBtn.onclick = () => this.setListMode('brief');
-		compactBtn.onclick = () => this.setListMode('compact');
 		row2.createDiv({ cls: 'scys-spacer' });
-		const onlyBtn = labeledButton(row2, 'target', '只看感兴趣', 'scys-mini-btn', { title: '只过滤当前这一页' });
+		this.shareBtn = row2.createEl('button', { text: '分享 Token', cls: 'scys-mini-btn' });
+		this.shareBtn.onclick = () => this.plugin.shareMyToken();
+		this.syncShareBtn();
+
+		const size = normalizePageSize(this.plugin.settings.pageSize);
+		this.sizeSelect = row2.createEl('select', { cls: 'scys-select', attr: { title: '每页条数', 'aria-label': '每页条数' } });
+		for (const n of PAGE_SIZES) {
+			const opt = this.sizeSelect.createEl('option', { text: n + ' 条' });
+			opt.value = String(n);
+		}
+		this.sizeSelect.value = String(size);
+		this.sizeSelect.onchange = () => this.setPageSize(this.sizeSelect.value);
+
+		const mode = this.plugin.settings.listMode === 'compact' ? 'compact' : 'brief';
+		this.modeSelect = row2.createEl('select', {
+			cls: 'scys-select',
+			attr: { title: '简洁：标题、摘要和阅读数。精简：只留标题和作者、时间、锚、赞、评论', 'aria-label': '列表疏密' },
+		});
+		const briefOpt = this.modeSelect.createEl('option', { text: '简洁' });
+		briefOpt.value = 'brief';
+		const compactOpt = this.modeSelect.createEl('option', { text: '精简' });
+		compactOpt.value = 'compact';
+		this.modeSelect.value = mode;
+		this.modeSelect.onchange = () => this.setListMode(this.modeSelect.value);
+
+		const onlyBtn = row2.createEl('button', { cls: 'scys-mini-btn scys-icon-btn', attr: { title: '只看感兴趣，只过滤当前这一页', 'aria-label': '只看感兴趣' } });
+		mountIcon(onlyBtn, 'target');
 		if (this.onlyInterest) onlyBtn.addClass('is-on');
 		onlyBtn.onclick = () => {
 			this.onlyInterest = !this.onlyInterest;
 			onlyBtn.toggleClass('is-on', this.onlyInterest);
 			this.renderList();
 		};
-		const refreshBtn = row2.createEl('button', { text: '刷新', cls: 'scys-mini-btn' });
+		const refreshBtn = row2.createEl('button', { cls: 'scys-mini-btn scys-icon-btn', attr: { title: '刷新', 'aria-label': '刷新' } });
+		mountIcon(refreshBtn, 'refresh');
 		refreshBtn.onclick = () => {
 			if (this.tab === 'search' && this.searchQuery) this.doSearch(this.searchQuery, this.page);
 			else this.loadTab(this.tab, this.sub, this.page);
@@ -658,8 +860,6 @@ class ScysRadarView extends ItemView {
 		const cfgBtn = row2.createEl('button', { cls: 'scys-mini-btn scys-icon-btn', attr: { title: '设置', 'aria-label': '设置' } });
 		mountIcon(cfgBtn, 'gear');
 		cfgBtn.onclick = () => this.plugin.openSettings();
-		const shareBtn = row2.createEl('button', { text: '分享 Token', cls: 'scys-mini-btn' });
-		shareBtn.onclick = () => this.plugin.shareMyToken();
 
 		this.listEl = root.createDiv({ cls: 'scys-list' });
 		this.statusEl = root.createDiv({ cls: 'scys-status' });
@@ -681,11 +881,15 @@ class ScysRadarView extends ItemView {
 		}
 	}
 
+	syncShareBtn() {
+		if (this.shareBtn) this.shareBtn.toggleClass('scys-hidden', this.tab !== 'token');
+	}
+
 	async setPageSize(n) {
 		const size = normalizePageSize(n);
 		this.plugin.settings.pageSize = size;
 		await this.plugin.saveSettings();
-		this.contentEl.querySelectorAll('[data-page-size]').forEach((b) => b.toggleClass('is-on', b.getAttribute('data-page-size') === String(size)));
+		if (this.sizeSelect) this.sizeSelect.value = String(size);
 		this.page = 1;
 		if (this.tab === 'search' && this.searchQuery) this.doSearch(this.searchQuery, 1);
 		else this.loadTab(this.tab, this.sub, 1);
@@ -695,7 +899,7 @@ class ScysRadarView extends ItemView {
 		const next = mode === 'compact' ? 'compact' : 'brief';
 		this.plugin.settings.listMode = next;
 		await this.plugin.saveSettings();
-		this.contentEl.querySelectorAll('[data-list-mode]').forEach((b) => b.toggleClass('is-on', b.getAttribute('data-list-mode') === next));
+		if (this.modeSelect) this.modeSelect.value = next;
 		this.renderList();
 	}
 
@@ -709,9 +913,10 @@ class ScysRadarView extends ItemView {
 		this.sub = null;
 		this.searchQuery = kw;
 		this.page = page == null ? 1 : page;
+		this.syncShareBtn();
 		this.contentEl.querySelectorAll('button.scys-tab').forEach((b) => b.removeClass('scys-tab-active'));
 		this.renderSubBar();
-		await this.runLoad('正在检索「' + kw + '」…', () => this.plugin.fetchSearch(kw, this.page), '没有搜到「' + kw + '」相关内容，换个词试试');
+		await this.runLoad('正在检索「' + kw + '」…', (opts) => this.plugin.fetchSearch(kw, this.page, opts), '没有搜到「' + kw + '」相关内容，换个词试试');
 	}
 
 	async loadTab(key, sub, page) {
@@ -723,12 +928,13 @@ class ScysRadarView extends ItemView {
 		this.searchQuery = null;
 		this.sub = nextSub;
 		this.page = page == null ? (switched ? 1 : this.page) : page;
+		this.syncShareBtn();
 		this.contentEl.querySelectorAll('button.scys-tab').forEach((b) => {
 			b.toggleClass('scys-tab-active', b.textContent === nav.label);
 		});
 		this.renderSubBar();
 		const loader = (nav.subs || []).find((s) => s.key === this.sub) || nav;
-		await this.runLoad('加载中…', () => loader.load(this.page));
+		await this.runLoad('加载中…', (opts) => loader.load(this.page, opts));
 	}
 
 	async goPage(n) {
@@ -741,19 +947,32 @@ class ScysRadarView extends ItemView {
 		const gen = ++this._loadGen;
 		this.loading = true;
 		this.renderList(loadingText);
+		const opts = {
+			isStale: () => gen !== this._loadGen,
+			onWait: (sec) => {
+				if (gen !== this._loadGen || !this.statusEl) return;
+				this.statusEl.empty();
+				this.statusEl.createDiv({ cls: 'scys-page-note', text: '等 ' + sec + ' 秒后继续' });
+			},
+			waitsLeft: { n: MAX_RATE_WAITS },
+		};
+		const client = this.plugin.client;
+		if (client) client.onWait = opts.onWait;
+		let result;
 		try {
-			const result = normalizeFeed(await load());
-			if (gen !== this._loadGen) return;
+			result = normalizeFeed(await load(opts));
+			if (gen !== this._loadGen || result.aborted) return;
 			this.items = result.items;
 			this.feed = result;
 			if (result.page) this.page = result.page;
 			this.updatedAt = new Date();
 		} catch (e) {
-			if (gen !== this._loadGen) return;
+			if (gen !== this._loadGen || (e && e.stale)) return;
 			new Notice('加载失败：' + e.message, 6000);
 			this.renderList('加载失败：' + e.message);
 			return;
 		} finally {
+			if (client && client.onWait === opts.onWait) client.onWait = null;
 			if (gen === this._loadGen) this.loading = false;
 		}
 		if (gen !== this._loadGen) return;
@@ -793,6 +1012,15 @@ class ScysRadarView extends ItemView {
 			el.createDiv({ cls: 'scys-empty', text: emptyMsg });
 			if (this.statusEl) this.statusEl.empty();
 			return;
+		}
+		const feedNow = this.feed || {};
+		if (feedNow.guestNote) {
+			const note = el.createEl('button', {
+				cls: 'scys-guest-note',
+				text: feedNow.guestNote,
+				attr: { type: 'button', title: '在浏览器打开官网 Token 榜' },
+			});
+			note.onclick = () => window.open(feedNow.guestNoteUrl || TOKEN_RANK_HOME, '_blank');
 		}
 		if (!items.length) {
 			const filteredOut = this.onlyInterest && this.items.length > 0;
@@ -884,7 +1112,6 @@ class ScysRadarView extends ItemView {
 		}
 		if (it.kind !== 'rank' && it.kind !== 'board') {
 			const saveBtn = iconAction(foot, 'bookmark', '收藏为笔记');
-			saveBtn.addClass('scys-save-btn');
 			saveBtn.onclick = () => this.plugin.saveAsNote(it);
 		}
 	}
@@ -1005,7 +1232,7 @@ class TopicDetailModal extends Modal {
 				mdBtn.disabled = false;
 			}
 		};
-		const saveBtn = labeledButton(foot, 'bookmark', '收藏为笔记', 'scys-mini-btn scys-save-btn');
+		const saveBtn = labeledButton(foot, 'bookmark', '收藏为笔记');
 		saveBtn.onclick = () => {
 			this.plugin.saveAsNote(this.item, d);
 			this.close();
@@ -1063,20 +1290,24 @@ class AskYiRenModal extends Modal {
 		contentEl.empty();
 		contentEl.addClass('scys-detail');
 		contentEl.createEl('h3', { text: '问亦仁' });
-		contentEl.createDiv({ cls: 'scys-hint', text: 'AI 亦仁会用亦仁的公开回答与文章作答，生成通常需要 1-2 分钟，请保持窗口打开。' });
+		contentEl.createDiv({ cls: 'scys-hint', text: '生成大约 1–2 分钟，请保持窗口打开。' });
 		const ta = contentEl.createEl('textarea', {
 			cls: 'scys-ask-input',
-			attr: { placeholder: '例如：一个人做 AI 工具，当下最值得押注的方向是什么？' },
+			attr: { rows: '3', placeholder: '你想问亦仁什么？' },
 		});
 		if (this.initial) ta.value = this.initial;
 		const actions = contentEl.createDiv({ cls: 'scys-ask-actions' });
 		const askBtn = actions.createEl('button', { text: '提问', cls: 'mod-cta' });
 		const statusEl = contentEl.createDiv({ cls: 'scys-ask-status' });
-		const ansEl = contentEl.createDiv({ cls: 'scys-ask-answer' });
+		let ansEl = null;
 		let busy = false;
 		const stop = () => {
 			if (this.timer) clearInterval(this.timer);
 			this.timer = null;
+		};
+		const clearAnswer = () => {
+			if (ansEl) ansEl.remove();
+			ansEl = null;
 		};
 
 		askBtn.onclick = async () => {
@@ -1089,8 +1320,8 @@ class AskYiRenModal extends Modal {
 			busy = true;
 			askBtn.disabled = true;
 			stop();
-			ansEl.empty();
-			statusEl.setText('已提交给 AI 亦仁，正在生成…');
+			clearAnswer();
+			statusEl.setText('已提交，正在生成…');
 			try {
 				const c = await this.plugin.readyClient();
 				const st = await c.callTool('startAiYiRenChat', { userQuestion: question });
@@ -1104,6 +1335,7 @@ class AskYiRenModal extends Modal {
 				let tries = 0;
 				this.timer = setInterval(async () => {
 					tries += 1;
+					const waited = '已提交，正在生成…（已等待 ' + tries * 3 + ' 秒）';
 					if (tries > 100) {
 						stop();
 						statusEl.setText('等待超时（5 分钟），请重试或到生财 App 查看');
@@ -1117,15 +1349,16 @@ class AskYiRenModal extends Modal {
 						const ans = it && it.generateAnswer;
 						if (ans) {
 							stop();
+							ansEl = contentEl.createDiv({ cls: 'scys-ask-answer' });
 							await this.renderAnswer(ansEl, question, ans, it);
 							statusEl.setText('已生成于 ' + new Date().toLocaleTimeString('zh-CN'));
 							busy = false;
 							askBtn.disabled = false;
-						} else if (tries % 5 === 0) {
-							statusEl.setText('还在生成…（已等待 ' + tries * 3 + ' 秒）');
+						} else {
+							statusEl.setText(waited);
 						}
 					} catch (e) {
-						if (tries % 5 === 0) statusEl.setText('仍在等待回答…（' + e.message + '）');
+						statusEl.setText(waited);
 					}
 				}, 3000);
 			} catch (e) {
@@ -1138,7 +1371,7 @@ class AskYiRenModal extends Modal {
 
 	async renderAnswer(el, question, answer, item) {
 		el.empty();
-		el.createEl('h4', { text: 'Q：' + question });
+		el.createDiv({ cls: 'scys-ask-q', text: question });
 		const bodyEl = el.createDiv({ cls: 'scys-ask-body' });
 		try {
 			await window.MarkdownRenderer.render(this.app, String(answer || ''), bodyEl, '', this.plugin);
@@ -1157,7 +1390,7 @@ class AskYiRenModal extends Modal {
 			}
 		}
 		const foot = el.createDiv({ cls: 'scys-ask-foot' });
-		const saveBtn = labeledButton(foot, 'bookmark', '存为笔记', 'scys-mini-btn scys-save-btn');
+		const saveBtn = labeledButton(foot, 'bookmark', '存为笔记');
 		saveBtn.onclick = () => {
 			this.plugin.saveAsNote(
 				{ kind: 'yiren', entityId: null, url: '', title: '问亦仁：' + String(question || '').slice(0, 40), author: 'AI 亦仁', dateText: '', summary: '' },
@@ -1194,7 +1427,7 @@ class ScysRadarSettingTab extends PluginSettingTab {
 				await this.plugin.saveSettings();
 			})
 		);
-		new Setting(containerEl).setName('每页条数和列表模式').setDesc('在雷达侧栏工具栏切换，会记住。可选 10 / 20 / 50，以及简洁、精简。热门、精华、搜索、超级标的每次向接口最多要 10 条，20 和 50 会连续请求后拼成一页。榜单和 Token 榜显示前 N 名，没有第 2 页。');
+		new Setting(containerEl).setName('每页条数和列表模式').setDesc('在雷达侧栏工具栏切换，会记住。可选 10 / 20 / 50，以及简洁、精简。热门和超级标的每次向接口最多要 10 条，20 和 50 会连续请求后拼成一页。精华、搜索、风向标、中标一次请求一页。榜单和 Token 榜显示前 N 名，没有第 2 页。');
 		new Setting(containerEl).setName('航海显示已结束').setDesc('默认只看「即将开放 / 报名中 / 进行中」；打开后可翻阅全部历史航海（约 380 条、37 期），便于回溯往期选题').addToggle((t) =>
 			t.setValue(!!this.plugin.settings.sailIncludeFinished).onChange(async (v) => {
 				this.plugin.settings.sailIncludeFinished = v;
@@ -1256,11 +1489,15 @@ class ScysRadarSettingTab extends PluginSettingTab {
 class ScysRadarPlugin extends Plugin {
 	shareMyToken() {
 		const url = this.tokenProfile && this.tokenProfile.shareUrl;
-		if (!url) {
-			new Notice('请先打开「Token 榜」加载你的官方排名，再分享。');
+		if (url) {
+			window.open(url, '_blank');
 			return;
 		}
-		window.open(url, '_blank');
+		if (this.tokenRankState === 'anonymous') {
+			new Notice('Token 榜未识别当前账户，不能分享我的排名。');
+			return;
+		}
+		new Notice('请先打开 Token 榜。');
 	}
 	async onload() {
 		try {
@@ -1388,21 +1625,25 @@ class ScysRadarPlugin extends Plugin {
 		};
 	}
 
-	async fetchSearchTopic(baseArgs, page) {
+	async fetchSearchTopic(baseArgs, page, opts) {
 		const c = await this.readyClient();
 		const size = this.pageArgs().pageSize;
 		const span = mcpWindow(page || 1, size, SEARCH_TOPIC_CAP);
 		const items = [];
 		let total = null;
 		let partialNote = '';
+		const ctx = mcpCtx(opts);
+		const stopped = () => ({ items, total, hasMore: false, partialNote: '', aborted: true, pager: 'page' });
 		for (let i = 0; i < span.count; i++) {
+			if (ctx.isStale()) return stopped();
 			const pageIndex = span.start + i;
 			let r;
 			try {
-				r = await c.callTool('searchTopic', Object.assign({}, baseArgs, { displayMode: 1, pageIndex, pageSize: SEARCH_TOPIC_CAP }));
+				r = await c.callTool('searchTopic', Object.assign({}, baseArgs, { displayMode: 1, pageIndex, pageSize: SEARCH_TOPIC_CAP }), ctx);
 			} catch (e) {
+				if ((e && e.stale) || ctx.isStale()) return stopped();
 				if (!items.length) throw e;
-				partialNote = '这一页只拿到 ' + items.length + ' 条：' + e.message;
+				partialNote = '这一页只拿到 ' + items.length + ' 条。' + e.message;
 				break;
 			}
 			const batch = ((r && r.items) || []).map((x) => this.mapTopic(x));
@@ -1416,20 +1657,31 @@ class ScysRadarPlugin extends Plugin {
 		return { items, total, hasMore: hasMore && !partialNote, partialNote, pager: 'page' };
 	}
 
-	async fetchHot(page) {
+	async fetchHot(page, opts) {
 		const dayAgo = Math.floor(Date.now() / 1000) - 86400 * 7;
-		return this.fetchSearchTopic({ isHot: true, gmtCreateStart: dayAgo }, page);
+		return this.fetchSearchTopic({ isHot: true, gmtCreateStart: dayAgo }, page, opts);
 	}
 
-	async fetchGood(page) {
-		return this.fetchSearchTopic({ isDigested: true }, page);
+	async fetchGood(page, opts) {
+		return this.fetchScene('good', page, opts);
 	}
 
-	async fetchScene(scene, page) {
+	async fetchScene(scene, page, opts) {
 		const c = await this.readyClient();
 		const size = this.pageArgs().pageSize;
 		const pageIndex = page || 1;
-		const r = await c.callTool('contentSearch', { pageScene: scene, displayMode: 1, pageIndex, pageSize: size });
+		const ctx = mcpCtx(opts);
+		const stopped = () => ({ items: [], total: null, hasMore: false, partialNote: '', aborted: true, pager: 'page' });
+		if (ctx.isStale()) return stopped();
+		const args = { pageScene: scene, displayMode: 1, pageIndex, pageSize: size };
+		if (opts && opts.keyword) args.keyword = opts.keyword;
+		let r;
+		try {
+			r = await c.callTool('contentSearch', args, ctx);
+		} catch (e) {
+			if ((e && e.stale) || ctx.isStale()) return stopped();
+			throw e;
+		}
 		const box = (r && r.topicDetailDTO) || {};
 		const items = (box.items || []).map((x) => this.mapTopic(x));
 		const total = finiteNum(box.total);
@@ -1437,12 +1689,12 @@ class ScysRadarPlugin extends Plugin {
 		return { items, total, hasMore, partialNote: '', pager: 'page' };
 	}
 
-	fetchFxb(page) {
-		return this.fetchScene('fxb', page);
+	fetchFxb(page, opts) {
+		return this.fetchScene('fxb', page, opts);
 	}
 
-	fetchWinBid(page) {
-		return this.fetchScene('winBid', page);
+	fetchWinBid(page, opts) {
+		return this.fetchScene('winBid', page, opts);
 	}
 
 	mapSail(a) {
@@ -1500,13 +1752,13 @@ class ScysRadarPlugin extends Plugin {
 		};
 	}
 
-	async fetchSearch(kw, page) {
-		return this.fetchSearchTopic({ keyword: kw }, page);
+	async fetchSearch(kw, page, opts) {
+		return this.fetchScene('all', page, Object.assign({}, opts, { keyword: kw }));
 	}
 
-	async fetchSuper(page) {
+	async fetchSuper(page, opts) {
 		// 「超级标的」= 亦仁发布的【超级标 XX】系列，对应官方标签 menuId 2634453
-		return this.fetchSearchTopic({ includeMenuIdList: ['2634453'] }, page);
+		return this.fetchSearchTopic({ includeMenuIdList: ['2634453'] }, page, opts);
 	}
 
 	async fetchTokenRank() {
@@ -1515,28 +1767,24 @@ class ScysRadarPlugin extends Plugin {
 		const base = this.settings.tokenRankEndpoint;
 		const size = this.pageArgs().pageSize;
 		const [mine, r] = await Promise.all([
-			requestUrlJson({ url: 'https://scys.com/tokenrank/api/subapp/me-lab?range=7d', headers }),
+			requestUrlJson({ url: 'https://scys.com/tokenrank/api/subapp/me-lab?range=7d', headers }).catch(() => null),
 			requestUrlJson({ url: base + '?range=7d&board=total&metric=total&limit=' + size, headers }),
 		]);
-		if (mine && mine.status === -401) throw new Error('Token 排行榜尚未识别当前生财账户，请在官网完成 Token 排行榜登录后重试。');
-		if (!mine || mine.status !== 0 || !r || r.status !== 0) throw new Error((mine && mine.message) || (r && r.message) || 'Token 榜单暂时不可用');
-		const me = mine.user || mine.profile || mine;
-		const myRank = r.myRank || mine.rank || {};
-		const userId = me.userId || me.id || mine.userId;
-		const myItem = {
-			kind: 'rank', rank: myRank.rank || '—', tokens: myRank.score || (mine.kpi && mine.kpi.total) || mine.total || 0,
-			title: (me.name || mine.name || '我') + '（我）', summary: '当前已登录账户 · ' + (myRank.rank ? '近 7 天第 ' + myRank.rank + ' 名' : '暂未进入榜单'), author: '',
-			url: userId ? 'https://scys.com/tokenrank/u/' + userId + '?range=7d' : 'https://scys.com/tokenrank/',
-		};
-		this.tokenProfile = { shareUrl: myItem.url, userId };
-		const entries = (r.entries || []).filter((x) => !userId || x.userId !== userId).map((x) => ({ kind: 'rank', rank: x.rank, tokens: x.score, title: x.name || '匿名用户', summary: '主力工具：' + Object.keys(x.byTool || {}).join(' / ') + (x.primaryModel ? ' · ' + x.primaryModel : ''), author: '', url: 'https://scys.com/tokenrank/u/' + x.userId }));
-		return { items: [myItem].concat(entries), total: null, hasMore: false, partialNote: '', pager: 'top', topLabel: '前 ' + entries.length + ' 名' };
+		const built = buildTokenRank(mine, r);
+		this.tokenProfile = built.profile;
+		this.tokenRankState = built.rankState;
+		return built.feed;
 	}
 
-	async fetchContentBoards() {
+	async fetchContentBoards(opts) {
 		const size = this.pageArgs().pageSize;
-		const fxbRes = await this.fetchFxb(1);
-		const hotRes = await this.fetchHot(1);
+		const ctx = mcpCtx(opts);
+		const fxbRes = await this.fetchFxb(1, opts);
+		if (ctx.isStale() || (fxbRes && fxbRes.aborted)) {
+			return { items: [], total: null, hasMore: false, partialNote: '', aborted: true, pager: 'top', topLabel: '' };
+		}
+		const hotRes = await this.fetchHot(1, opts);
+		if (hotRes && hotRes.aborted) return Object.assign({ pager: 'top', topLabel: '' }, hotRes);
 		const fxb = fxbRes.items || [];
 		const hot = hotRes.items || [];
 		const anchor = (x) => (x.anchors != null ? Number(x.anchors) : Number((x.raw && (x.raw.coinCount || x.raw.anchorCount || x.raw.anchorNum || x.raw.voteCount)) || 0)) || 0;
