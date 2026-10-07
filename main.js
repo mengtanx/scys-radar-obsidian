@@ -4,7 +4,8 @@ const DEFAULT_SETTINGS = {
 	endpoint: 'https://mcp.scys.com/shengcai-web/mcp',
 	interests: 'AI,AI编程,Agent,MCP,独立开发,出海,小红书',
 	saveFolder: '生财副业/02 每日情报',
-	hotPageSize: 15,
+	pageSize: 20,
+	listMode: 'brief',
 	showBody: true,
 	sailIncludeFinished: false,
 	partyProvince: '湖北省',
@@ -14,9 +15,94 @@ const DEFAULT_SETTINGS = {
 	tokenRankEndpoint: 'https://scys.com/tokenrank/api/subapp/leaderboard',
 };
 
-const { Plugin, Notice, ItemView, WorkspaceLeaf, Modal, Setting, PluginSettingTab, TFile, Platform } = require('obsidian');
+const { Plugin, Notice, ItemView, WorkspaceLeaf, Modal, Setting, PluginSettingTab, TFile, Platform, setIcon } = require('obsidian');
 
 const VIEW_TYPE_SCYS = 'scys-radar-mx-view';
+
+function svgIcon(inner) {
+	return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
+}
+
+function svgFill(inner) {
+	return '<svg viewBox="0 0 16 16" fill="currentColor">' + inner + '</svg>';
+}
+
+const ICONS = {
+	flame: svgFill('<path d="M8 14.8c-3.6 0-4.6-2.8-4.2-5.2.3-1.8 1.4-2.8 1.8-4.2.2 1.2 1.1 2 1.6 2C6.6 5.2 7.4 2.6 8.4 1.2 8.2 3.4 9.4 4.6 9.8 6.2c1.8-.6 3.6 1.2 3.4 3.6.2 2.8-1.8 5-5.2 5z"/>'),
+	gem: svgIcon('<path d="M2.6 6.5 8 2.2l5.4 4.3L8 14z"/><path d="M2.6 6.5h10.8M8 2.2v11.8M6.2 6.5 8 14l1.8-7.5"/>'),
+	sail: svgIcon('<path d="M2.2 11.4c2.4 2.4 9.2 2.4 11.6 0l-1.4-1.2H3.6z" fill="currentColor" stroke="none"/><path d="M6 10.2V2"/><path d="M6 2.7 11.6 10H6"/>'),
+	pin: svgIcon('<path d="M8 14.5S3.3 9.6 3.3 6.5a4.7 4.7 0 0 1 9.4 0C12.7 9.6 8 14.5 8 14.5z"/><circle cx="8" cy="6.5" r="1.35"/>'),
+	compass: svgIcon('<circle cx="8" cy="8" r="5.55"/><path d="M8 2.9 9.7 7.3H6.3z" fill="currentColor" stroke="none"/><path d="M8 13.1 6.9 8.9h2.2z"/><path d="M2.9 8h4.2M8.9 8h4.2"/>'),
+	bars: svgFill('<rect x="2.3" y="9" width="2.5" height="4.6" rx="0.45"/><rect x="6.75" y="5.4" width="2.5" height="8.2" rx="0.45"/><rect x="11.2" y="2.3" width="2.5" height="11.3" rx="0.45"/>'),
+	medal: svgFill('<path d="M4.7 1.3h6.6L9.4 6.2a3.6 3.6 0 1 1-2.8 0z"/>'),
+	search: svgIcon('<circle cx="6.8" cy="6.8" r="3.7"/><path d="m9.6 9.6 3.6 3.6"/>'),
+	ask: svgIcon('<circle cx="6" cy="4.3" r="1.65"/><path d="M3.2 13.5c.3-2.5 1.4-3.8 2.8-3.8s2.5 1.3 2.8 3.8"/><path d="m7.6 10.2 3.2-3.6V4.8h1.8"/>'),
+	target: svgIcon('<circle cx="8" cy="8" r="5.3"/><circle cx="8" cy="8" r="1.35" fill="currentColor" stroke="none"/>'),
+	gear: '<svg viewBox="0 0 16 16"><mask id="scys-gear"><rect width="16" height="16" fill="#fff"/><circle cx="8" cy="8" r="2.15" fill="#000"/></mask><g mask="url(#scys-gear)" fill="currentColor"><circle cx="8" cy="8" r="3.7"/><rect x="6.7" y="1.15" width="2.6" height="5.4" rx="0.5"/><rect x="6.7" y="1.15" width="2.6" height="5.4" rx="0.5" transform="rotate(60 8 8)"/><rect x="6.7" y="1.15" width="2.6" height="5.4" rx="0.5" transform="rotate(120 8 8)"/><rect x="6.7" y="1.15" width="2.6" height="5.4" rx="0.5" transform="rotate(180 8 8)"/><rect x="6.7" y="1.15" width="2.6" height="5.4" rx="0.5" transform="rotate(240 8 8)"/><rect x="6.7" y="1.15" width="2.6" height="5.4" rx="0.5" transform="rotate(300 8 8)"/></g></svg>',
+	anchor: svgIcon('<circle cx="8" cy="3.5" r="1.45"/><path d="M8 4.95v7.25M5 7.1h6"/><path d="M8 12.2c0 0-4.4.2-4.4-3M8 12.2c0 0 4.4.2 4.4-3"/>'),
+	like: svgIcon('<path d="M4.7 13.4H2.9V7.4h1.8"/><path d="M4.7 8.1 6.8 3.5c.3-.6 1.2-.4 1.3.3l.3 2.6h3.3c.7 0 1.2.6 1 1.3l-1.1 4.6c-.2.6-.7 1.1-1.3 1.1H4.7"/>'),
+	comment: svgIcon('<path d="M2.6 3.5h9.6a1.3 1.3 0 0 1 1.3 1.3v4.4a1.3 1.3 0 0 1-1.3 1.3H7.2L4.8 13V10.5H2.6a1.3 1.3 0 0 1-1.3-1.3V4.8a1.3 1.3 0 0 1 1.3-1.3z"/>'),
+	bolt: svgFill('<path d="M9.2 1.4 3.9 8.8h3.3L6.2 14.6 12.5 6.7H9z"/>'),
+	eye: svgIcon('<path d="M1.5 8C3.4 5 5.5 3.8 8 3.8S12.6 5 14.5 8C12.6 11 10.5 12.2 8 12.2S3.4 11 1.5 8z"/><circle cx="8" cy="8" r="1.5"/>'),
+	person: svgIcon('<circle cx="8" cy="4.8" r="2.05"/><path d="M3.3 13.6c.5-2.8 2.2-4.2 4.7-4.2s4.2 1.4 4.7 4.2"/>'),
+	clock: svgIcon('<circle cx="8" cy="8" r="5.6"/><path d="M8 4.6v3.7l2.6 1.4"/>'),
+	pen: svgIcon('<path d="M9.5 2.5 13.4 6.4 6.1 13.6H2.3V9.7z"/><path d="m8.3 3.7 3.9 3.9"/>'),
+	bookmark: svgIcon('<path d="M4 2.2h8v11.6L8 11.1 4 13.8z"/>'),
+	check: svgIcon('<path d="M2.8 8.3 6.4 11.8 13.3 4.2"/>'),
+	warn: svgIcon('<path d="M8 1.9 14.3 13.6H1.7z"/><path d="M8 6.2v3.2M8 11.2v.6"/>'),
+};
+
+function mountIcon(parent, name) {
+	const el = parent.createSpan({ cls: 'scys-ico', attr: { 'aria-hidden': 'true' } });
+	el.innerHTML = ICONS[name] || '';
+	return el;
+}
+
+function labeledButton(parent, icon, text, cls, attr) {
+	const btn = parent.createEl('button', { cls: cls || 'scys-mini-btn', attr: Object.assign({ title: text }, attr || {}) });
+	mountIcon(btn, icon);
+	btn.createSpan({ text: text });
+	return btn;
+}
+
+function iconAction(parent, lucideId, label) {
+	const btn = parent.createEl('button', {
+		cls: 'scys-mini-btn scys-icon-btn',
+		attr: { 'aria-label': label, title: label },
+	});
+	setIcon(btn, lucideId);
+	return btn;
+}
+
+function statSpan(parent, icon, value, label) {
+	const s = parent.createSpan({ cls: 'scys-stat', attr: { title: label + ' ' + value } });
+	mountIcon(s, icon);
+	s.createSpan({ text: String(value) });
+	return s;
+}
+
+function notify(icon, text, timeout) {
+	const n = new Notice('', timeout);
+	const host = n.messageEl || n.noticeEl;
+	host.textContent = '';
+	host.classList.add('scys-notice-line');
+	const ico = document.createElement('span');
+	ico.className = 'scys-ico';
+	ico.setAttribute('aria-hidden', 'true');
+	ico.innerHTML = ICONS[icon] || '';
+	const label = document.createElement('span');
+	label.textContent = text;
+	host.append(ico, label);
+	return n;
+}
+
+function loopbackHtml(ok) {
+	const icon = ok ? ICONS.check : ICONS.warn;
+	const title = ok ? '授权完成' : '回调参数不完整';
+	const body = ok ? '请回到 Obsidian 继续操作' : '请回到 Obsidian，改用「手动粘贴授权链接」完成。';
+	const script = ok ? '<script>setTimeout(function(){window.close()},1500)</script>' : '';
+	return '<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:system-ui;text-align:center;padding:60px;color:#1c1917;background:#fafaf9}h2{display:flex;gap:8px;align-items:center;justify-content:center;font-weight:600;font-size:22px}.mark{width:22px;height:22px;display:inline-flex}.mark svg{width:22px;height:22px}</style></head><body><h2><span class="mark">' + icon + '</span>' + title + '</h2><p>' + body + '</p>' + script + '</body></html>';
+}
 
 function tsToDate(ts) {
 	if (!ts) return '';
@@ -26,6 +112,57 @@ function tsToDate(ts) {
 
 function esc(s) {
 	return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+const PAGE_SIZES = [10, 20, 50];
+const SEARCH_TOPIC_CAP = 10;
+
+function normalizePageSize(n) {
+	const v = Number(n);
+	return PAGE_SIZES.includes(v) ? v : 20;
+}
+
+// searchTopic 每页最多 10 条。视觉上的第 N 页要串行拼若干个 MCP 页。
+function mcpWindow(visualPage, visualSize, cap) {
+	const page = Math.max(1, Number(visualPage) || 1);
+	const per = Math.max(1, Math.ceil(visualSize / cap));
+	return { start: (page - 1) * per + 1, count: per };
+}
+
+function relTime(ts) {
+	if (!ts) return '';
+	const ms = Number(ts) < 1e12 ? Number(ts) * 1000 : Number(ts);
+	const diff = Date.now() - ms;
+	if (!Number.isFinite(diff) || diff < 0) return tsToDate(ts);
+	const min = Math.floor(diff / 60000);
+	if (min < 1) return '刚刚';
+	if (min < 60) return min + '分钟前';
+	const hr = Math.floor(min / 60);
+	if (hr < 24) return hr + '小时前';
+	const day = Math.floor(hr / 24);
+	if (day < 30) return day + '天前';
+	return tsToDate(ts);
+}
+
+function finiteNum(n) {
+	const v = Number(n);
+	return Number.isFinite(v) ? v : null;
+}
+
+function normalizeFeed(result) {
+	if (Array.isArray(result)) {
+		return { items: result, total: null, hasMore: false, partialNote: '', pager: 'page', topLabel: '' };
+	}
+	const items = (result && result.items) || [];
+	return {
+		items,
+		total: result && Number.isFinite(result.total) ? result.total : null,
+		hasMore: !!(result && result.hasMore),
+		partialNote: (result && result.partialNote) || '',
+		pager: (result && result.pager) || 'page',
+		topLabel: (result && result.topLabel) || '',
+		page: result && result.page,
+	};
 }
 
 function stripMd(s, n = 120) {
@@ -226,9 +363,7 @@ function waitForLoopbackCode(redirectUri, state, timeoutSec, onEvent) {
 			}
 			const ok = req.url.startsWith('/callback') && hasCode && stateOk;
 			res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-			res.end(ok || hasError
-				? '<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>✅ 授权完成</h2><p>请回到 Obsidian 继续操作</p><script>setTimeout(()=>window.close(),1500)</script></body></html>'
-				: '<html><body style="font-family:system-ui;text-align:center;padding:60px"><h2>⚠️ 回调参数不完整</h2><p>请回到 Obsidian，改用「手动粘贴授权链接」完成。</p></body></html>');
+			res.end(loopbackHtml(!!(ok || hasError)));
 			if (!req.url.startsWith('/callback')) return;
 			if (hasError) {
 				cleanup();
@@ -301,7 +436,19 @@ class McpClient {
 	async callTool(name, args) {
 		const r = await this.rpc('tools/call', { name, arguments: args });
 		if (!r) return null;
-		if (r.isError) throw new Error('工具执行失败');
+		if (r.isError) {
+			const text = ((r.content || [])[0] || {}).text || '';
+			let msg = text || '工具执行失败';
+			try {
+				const j = JSON.parse(text);
+				const code = j && (j.code || j.error || j.name);
+				if (code === 'MCP_RATE_LIMITED') {
+					const wait = j.retryAfterSeconds || j.retry_after;
+					msg = '请求过于频繁' + (wait ? '，约 ' + wait + ' 秒后再翻' : '，请稍后再翻');
+				} else if (j && j.message) msg = j.message;
+			} catch {}
+			throw new Error(msg);
+		}
 		const c = (r.content || [])[0];
 		if (!c) return null;
 		if (c.type === 'text') {
@@ -353,28 +500,32 @@ class ScysRadarView extends ItemView {
 		this.items = [];
 		this.loading = false;
 		this.onlyInterest = false;
+		this.page = 1;
+		this.feed = { total: null, hasMore: false, partialNote: '', pager: 'page', topLabel: '' };
+		this.updatedAt = null;
+		this._loadGen = 0;
 		this.navs = [
-			{ key: 'hot', label: '🔥 热门', load: () => this.plugin.fetchHot() },
-			{ key: 'good', label: '💎 精华', load: () => this.plugin.fetchGood() },
-			{ key: 'sail', label: '⛵ 航海', load: () => this.plugin.fetchSail() },
+			{ key: 'hot', icon: 'flame', label: '热门', load: (page) => this.plugin.fetchHot(page) },
+			{ key: 'good', icon: 'gem', label: '精华', load: (page) => this.plugin.fetchGood(page) },
+			{ key: 'sail', icon: 'sail', label: '航海', load: (page) => this.plugin.fetchSail(page) },
 			{
-				key: 'party', label: '📍 聚会',
+				key: 'party', icon: 'pin', label: '聚会',
 				subs: [
-					{ key: 'local', label: '本地', load: () => this.plugin.fetchParties('local') },
-					{ key: 'all', label: '全国', load: () => this.plugin.fetchParties('all') },
+					{ key: 'local', label: '本地', load: (page) => this.plugin.fetchParties('local', page) },
+					{ key: 'all', label: '全国', load: (page) => this.plugin.fetchParties('all', page) },
 				],
 			},
 			{
-				key: 'proj', label: '🧭 项目',
+				key: 'proj', icon: 'compass', label: '项目',
 				subs: [
-					{ key: 'lib', label: '项目库', load: () => this.plugin.fetchProjectLib() },
-					{ key: 'fxb', label: '风向标', load: () => this.plugin.fetchFxb() },
-					{ key: 'hit', label: '中标', load: () => this.plugin.fetchSelectedFxb() },
-					{ key: 'super', label: '超级标的', load: () => this.plugin.fetchSuper() },
+					{ key: 'lib', label: '项目库', load: (page) => this.plugin.fetchProjectLib(page) },
+					{ key: 'fxb', label: '风向标', load: (page) => this.plugin.fetchFxb(page) },
+					{ key: 'hit', label: '中标', load: (page) => this.plugin.fetchWinBid(page) },
+					{ key: 'super', label: '超级标的', load: (page) => this.plugin.fetchSuper(page) },
 				],
 			},
-			{ key: 'token', label: '📊 Token 榜', load: () => this.plugin.fetchTokenRank() },
-			{ key: 'board', label: '🏅 榜单', load: () => this.plugin.fetchContentBoards() },
+			{ key: 'token', icon: 'bars', label: 'Token 榜', load: () => this.plugin.fetchTokenRank() },
+			{ key: 'board', icon: 'medal', label: '榜单', load: () => this.plugin.fetchContentBoards() },
 		];
 	}
 
@@ -425,7 +576,7 @@ class ScysRadarView extends ItemView {
 				await this.plugin.oauth.completeAuthWithCode(input.value);
 				await this.plugin.saveSettings();
 				await this.plugin.ensureClient();
-				new Notice('✅ 生财授权成功');
+				notify('check', '生财授权成功');
 				this.render();
 				this.loadTab('hot');
 			} catch (e) {
@@ -440,7 +591,7 @@ class ScysRadarView extends ItemView {
 			status.setText('已打开浏览器，等待授权回调…');
 			try {
 				await this.plugin.login((msg) => status.setText(msg));
-				new Notice('✅ 生财授权成功');
+				notify('check', '生财授权成功');
 				this.render();
 				this.loadTab('hot');
 			} catch (e) {
@@ -462,22 +613,37 @@ class ScysRadarView extends ItemView {
 		input.onkeydown = (e) => {
 			if (e.key === 'Enter') runSearch();
 		};
-		const goBtn = searchRow.createEl('button', { text: '🔍 搜索', cls: 'scys-mini-btn' });
+		const goBtn = labeledButton(searchRow, 'search', '搜索');
 		goBtn.onclick = runSearch;
-		const askBtn = searchRow.createEl('button', { text: '🙋 问亦仁', cls: 'scys-mini-btn', attr: { title: '向亦仁的 AI 分身提问，回答生成约需 1-2 分钟' } });
+		const askBtn = labeledButton(searchRow, 'ask', '问亦仁', 'scys-mini-btn', { title: '向亦仁的 AI 分身提问，回答生成约需 1-2 分钟' });
 		askBtn.onclick = () => this.plugin.openAskYiRen(input.value);
 
 		const bar = root.createDiv({ cls: 'scys-toolbar' });
 		for (const n of this.navs) {
-			const b = bar.createEl('button', { text: n.label, cls: this.tab === n.key ? 'scys-tab scys-tab-active' : 'scys-tab' });
+			const b = bar.createEl('button', { cls: this.tab === n.key ? 'scys-tab scys-tab-active' : 'scys-tab' });
+			mountIcon(b, n.icon);
+			b.createSpan({ text: n.label });
 			b.onclick = () => this.loadTab(n.key);
 		}
 		this.subBarEl = root.createDiv({ cls: 'scys-subtoolbar' });
 		this.renderSubBar();
 
 		const row2 = root.createDiv({ cls: 'scys-toolbar scys-toolbar-2' });
-		const spacer = row2.createDiv({ cls: 'scys-spacer' });
-		const onlyBtn = row2.createEl('button', { text: '🎯 只看感兴趣', cls: 'scys-mini-btn', attr: { title: '按兴趣关键词过滤' } });
+		const size = normalizePageSize(this.plugin.settings.pageSize);
+		for (const n of PAGE_SIZES) {
+			const b = row2.createEl('button', { text: String(n), cls: 'scys-mini-btn scys-size-btn', attr: { 'data-page-size': String(n), title: '每页 ' + n + ' 条' } });
+			if (n === size) b.addClass('is-on');
+			b.onclick = () => this.setPageSize(n);
+		}
+		const mode = this.plugin.settings.listMode === 'compact' ? 'compact' : 'brief';
+		const briefBtn = row2.createEl('button', { text: '简洁', cls: 'scys-mini-btn', attr: { 'data-list-mode': 'brief', title: '标题、摘要和阅读数' } });
+		const compactBtn = row2.createEl('button', { text: '精简', cls: 'scys-mini-btn', attr: { 'data-list-mode': 'compact', title: '只留标题和作者、时间、锚、赞、评论' } });
+		if (mode === 'brief') briefBtn.addClass('is-on');
+		else compactBtn.addClass('is-on');
+		briefBtn.onclick = () => this.setListMode('brief');
+		compactBtn.onclick = () => this.setListMode('compact');
+		row2.createDiv({ cls: 'scys-spacer' });
+		const onlyBtn = labeledButton(row2, 'target', '只看感兴趣', 'scys-mini-btn', { title: '只过滤当前这一页' });
 		if (this.onlyInterest) onlyBtn.addClass('is-on');
 		onlyBtn.onclick = () => {
 			this.onlyInterest = !this.onlyInterest;
@@ -486,10 +652,11 @@ class ScysRadarView extends ItemView {
 		};
 		const refreshBtn = row2.createEl('button', { text: '刷新', cls: 'scys-mini-btn' });
 		refreshBtn.onclick = () => {
-			if (this.tab === 'search' && this.searchQuery) this.doSearch(this.searchQuery);
-			else this.loadTab(this.tab, this.sub);
+			if (this.tab === 'search' && this.searchQuery) this.doSearch(this.searchQuery, this.page);
+			else this.loadTab(this.tab, this.sub, this.page);
 		};
-		const cfgBtn = row2.createEl('button', { text: '⚙️', cls: 'scys-mini-btn' });
+		const cfgBtn = row2.createEl('button', { cls: 'scys-mini-btn scys-icon-btn', attr: { title: '设置', 'aria-label': '设置' } });
+		mountIcon(cfgBtn, 'gear');
 		cfgBtn.onclick = () => this.plugin.openSettings();
 		const shareBtn = row2.createEl('button', { text: '分享 Token', cls: 'scys-mini-btn' });
 		shareBtn.onclick = () => this.plugin.shareMyToken();
@@ -514,7 +681,25 @@ class ScysRadarView extends ItemView {
 		}
 	}
 
-	async doSearch(q) {
+	async setPageSize(n) {
+		const size = normalizePageSize(n);
+		this.plugin.settings.pageSize = size;
+		await this.plugin.saveSettings();
+		this.contentEl.querySelectorAll('[data-page-size]').forEach((b) => b.toggleClass('is-on', b.getAttribute('data-page-size') === String(size)));
+		this.page = 1;
+		if (this.tab === 'search' && this.searchQuery) this.doSearch(this.searchQuery, 1);
+		else this.loadTab(this.tab, this.sub, 1);
+	}
+
+	async setListMode(mode) {
+		const next = mode === 'compact' ? 'compact' : 'brief';
+		this.plugin.settings.listMode = next;
+		await this.plugin.saveSettings();
+		this.contentEl.querySelectorAll('[data-list-mode]').forEach((b) => b.toggleClass('is-on', b.getAttribute('data-list-mode') === next));
+		this.renderList();
+	}
+
+	async doSearch(q, page) {
 		const kw = String(q || '').trim();
 		if (!kw) {
 			new Notice('请输入搜索关键词', 4000);
@@ -523,45 +708,58 @@ class ScysRadarView extends ItemView {
 		this.tab = 'search';
 		this.sub = null;
 		this.searchQuery = kw;
+		this.page = page == null ? 1 : page;
 		this.contentEl.querySelectorAll('button.scys-tab').forEach((b) => b.removeClass('scys-tab-active'));
 		this.renderSubBar();
-		this.renderList('正在检索「' + kw + '」…');
-		try {
-			this.items = (await this.plugin.fetchSearch(kw)) || [];
-		} catch (e) {
-			new Notice('搜索失败：' + e.message, 6000);
-			this.renderList('搜索失败：' + e.message);
-			return;
-		}
-		if (!this.items.length) this.renderList('没有搜到「' + kw + '」相关内容，换个词试试');
-		else this.renderList();
+		await this.runLoad('正在检索「' + kw + '」…', () => this.plugin.fetchSearch(kw, this.page), '没有搜到「' + kw + '」相关内容，换个词试试');
 	}
 
-	async loadTab(key, sub) {
+	async loadTab(key, sub, page) {
 		const nav = this.navs.find((n) => n.key === key);
 		if (!nav) return;
+		const nextSub = sub || (nav.subs ? nav.subs[0].key : null);
+		const switched = key !== this.tab || nextSub !== this.sub || !!this.searchQuery;
 		this.tab = key;
 		this.searchQuery = null;
-		this.sub = sub || (nav.subs ? nav.subs[0].key : null);
-		this.items = [];
+		this.sub = nextSub;
+		this.page = page == null ? (switched ? 1 : this.page) : page;
 		this.contentEl.querySelectorAll('button.scys-tab').forEach((b) => {
-			const isActive = b.textContent === nav.label;
-			b.toggleClass('scys-tab-active', isActive);
+			b.toggleClass('scys-tab-active', b.textContent === nav.label);
 		});
 		this.renderSubBar();
 		const loader = (nav.subs || []).find((s) => s.key === this.sub) || nav;
-		this.renderList('加载中…');
+		await this.runLoad('加载中…', () => loader.load(this.page));
+	}
+
+	async goPage(n) {
+		if (n < 1 || this.loading) return;
+		if (this.tab === 'search' && this.searchQuery) await this.doSearch(this.searchQuery, n);
+		else await this.loadTab(this.tab, this.sub, n);
+	}
+
+	async runLoad(loadingText, load, emptyOverride) {
+		const gen = ++this._loadGen;
 		this.loading = true;
+		this.renderList(loadingText);
 		try {
-			this.items = (await loader.load()) || [];
+			const result = normalizeFeed(await load());
+			if (gen !== this._loadGen) return;
+			this.items = result.items;
+			this.feed = result;
+			if (result.page) this.page = result.page;
+			this.updatedAt = new Date();
 		} catch (e) {
+			if (gen !== this._loadGen) return;
 			new Notice('加载失败：' + e.message, 6000);
 			this.renderList('加载失败：' + e.message);
 			return;
 		} finally {
-			this.loading = false;
+			if (gen === this._loadGen) this.loading = false;
 		}
-		this.renderList();
+		if (gen !== this._loadGen) return;
+		if (!this.items.length && emptyOverride && this.page <= 1) this.renderList(emptyOverride);
+		else this.renderList();
+		if (this.listEl) this.listEl.scrollTop = 0;
 	}
 
 	matchInterests(text) {
@@ -586,83 +784,140 @@ class ScysRadarView extends ItemView {
 		if (!this.listEl) return;
 		const el = this.listEl;
 		el.empty();
+		const compact = this.plugin.settings.listMode === 'compact';
 		let items = this.items;
 		if (this.onlyInterest) {
 			items = items.filter((it) => this.matchInterests(it.title + ' ' + (it.summary || '')).length > 0);
 		}
 		if (emptyMsg) {
 			el.createDiv({ cls: 'scys-empty', text: emptyMsg });
+			if (this.statusEl) this.statusEl.empty();
 			return;
 		}
 		if (!items.length) {
-			el.createDiv({ cls: 'scys-empty', text: this.emptyText() });
-			return;
+			const filteredOut = this.onlyInterest && this.items.length > 0;
+			el.createDiv({ cls: 'scys-empty', text: filteredOut ? '这一页没有感兴趣的帖子，可以翻下一页' : this.emptyText() });
 		}
 		for (const it of items) {
-			const card = el.createDiv({ cls: 'scys-card' + (it.isDigested ? ' scys-card-digest' : '') });
-			const head = card.createDiv({ cls: 'scys-card-head' });
-			if (it.kind === 'rank') {
-				head.createSpan({ cls: 'scys-badge scys-badge-rank', text: '第 ' + it.rank + ' 名' });
-				head.createSpan({ cls: 'scys-stats', text: '⚡ ' + formatTokens(it.tokens) + ' Token' });
-			} else if (it.kind === 'board') {
-				head.createSpan({ cls: 'scys-badge scys-badge-board', text: it.typeLabel || '榜单' });
-				head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
-				const stats = [];
-				if (it.anchorCount) stats.push('⚓ ' + it.anchorCount);
-				if (it.likes) stats.push('👍 ' + it.likes);
-				if (stats.length) head.createSpan({ cls: 'scys-stats', text: stats.join(' · ') });
-			} else if (it.kind === 'sail') {
-				head.createSpan({ cls: 'scys-badge scys-badge-sail', text: it.typeLabel || '航海' });
-				head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
-			} else if (it.kind === 'party') {
-				head.createSpan({ cls: 'scys-badge scys-badge-party', text: it.typeLabel || '聚会' });
-				head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
-				if (it.place) head.createSpan({ cls: 'scys-place', text: '📍 ' + it.place });
-				const pstats = [it.costText, it.remainText].filter(Boolean);
-				if (pstats.length) head.createSpan({ cls: 'scys-stats', text: pstats.join(' · ') });
-			} else if (it.kind === 'project') {
-				head.createSpan({ cls: 'scys-badge scys-badge-proj', text: it.isSuper ? '超级标的' : '项目' });
-				if (it.incomeText) head.createSpan({ cls: 'scys-income', text: it.incomeText });
-				const jstats = [it.costText, it.timeText, it.caseText].filter(Boolean);
-				if (jstats.length) head.createSpan({ cls: 'scys-stats', text: jstats.join(' · ') });
+			const card = el.createDiv({ cls: 'scys-card' + (compact ? ' scys-card-compact' : '') });
+			const postLike = !it.kind || it.kind === 'topic' || it.kind === 'board';
+			if (compact && postLike) {
+				const titleRow = card.createDiv({ cls: 'scys-title-row' });
+				if (it.kind === 'board' && it.typeLabel) titleRow.createSpan({ cls: 'scys-badge scys-badge-board', text: it.typeLabel });
+				else if (it.isDigested) titleRow.createSpan({ cls: 'scys-badge scys-badge-digest', text: '精华' });
+				this.mountTitle(titleRow, it.title);
+				const foot = card.createDiv({ cls: 'scys-card-foot' });
+				const bits = [it.author, it.relText].filter(Boolean);
+				if (bits.length) foot.createSpan({ cls: 'scys-meta-text', text: bits.join(' · ') });
+				if (it.anchors != null) statSpan(foot, 'anchor', it.anchors, '投锚');
+				if (it.likes != null) statSpan(foot, 'like', it.likes, '点赞');
+				if (it.comments != null) statSpan(foot, 'comment', it.comments, '评论');
+				foot.createSpan({ cls: 'scys-spacer' });
+				this.appendActions(foot, it);
 			} else {
-				if (it.isDigested) head.createSpan({ cls: 'scys-badge scys-badge-digest', text: '精华' });
-				head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
-				const stats = [];
-				if (it.likes) stats.push('👍 ' + it.likes);
-				if (it.reads) stats.push('👁 ' + it.reads);
-				if (stats.length) head.createSpan({ cls: 'scys-stats', text: stats.join(' · ') });
-			}
-			const title = card.createDiv({ cls: 'scys-title' });
-			this.fillHighlighted(title, it.title);
-			if (this.plugin.settings.showBody && it.summary) {
-				const body = card.createDiv({ cls: 'scys-body' });
-				this.fillHighlighted(body, stripMd(it.summary, 100));
-			}
-			const foot = card.createDiv({ cls: 'scys-card-foot' });
-			if (it.author) foot.createSpan({ cls: 'scys-author', text: it.author });
-			const spacer = foot.createSpan({ cls: 'scys-spacer' });
-			if (it.url) {
-				const openBtn = foot.createEl('button', { text: '浏览器打开', cls: 'scys-mini-btn' });
-				openBtn.onclick = () => window.open(it.url, '_blank');
-			}
-			if (it.entityId) {
-				const detailBtn = foot.createEl('button', { text: '详情', cls: 'scys-mini-btn' });
-				detailBtn.onclick = () => this.plugin.openDetail(it);
-			}
-			if (it.kind !== 'rank' && it.kind !== 'board') {
-				const saveBtn = foot.createEl('button', { text: '⭐ 收藏为笔记', cls: 'scys-mini-btn scys-save-btn' });
-				saveBtn.onclick = () => this.plugin.saveAsNote(it);
+				const head = card.createDiv({ cls: 'scys-card-head' });
+				if (it.kind === 'rank') {
+					head.createSpan({ cls: 'scys-badge scys-badge-rank', text: '第 ' + it.rank + ' 名' });
+					const stats = head.createSpan({ cls: 'scys-stats' });
+					mountIcon(stats, 'bolt');
+					stats.createSpan({ text: formatTokens(it.tokens) + ' Token' });
+				} else if (it.kind === 'board') {
+					head.createSpan({ cls: 'scys-badge scys-badge-board', text: it.typeLabel || '榜单' });
+					head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
+					const stats = head.createSpan({ cls: 'scys-stats' });
+					if (it.anchorCount) statSpan(stats, 'anchor', it.anchorCount, '投锚');
+					if (it.likes) statSpan(stats, 'like', it.likes, '点赞');
+					if (!stats.childElementCount) stats.remove();
+				} else if (it.kind === 'sail') {
+					head.createSpan({ cls: 'scys-badge scys-badge-sail', text: it.typeLabel || '航海' });
+					head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
+				} else if (it.kind === 'party') {
+					head.createSpan({ cls: 'scys-badge scys-badge-party', text: it.typeLabel || '聚会' });
+					head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
+					if (it.place) {
+						const place = head.createSpan({ cls: 'scys-place' });
+						mountIcon(place, 'pin');
+						place.createSpan({ text: it.place });
+					}
+					const pstats = [it.costText, it.remainText].filter(Boolean);
+					if (pstats.length) head.createSpan({ cls: 'scys-stats', text: pstats.join(' · ') });
+				} else if (it.kind === 'project') {
+					head.createSpan({ cls: 'scys-badge scys-badge-proj', text: it.isSuper ? '超级标的' : '项目' });
+					if (it.incomeText) head.createSpan({ cls: 'scys-income', text: it.incomeText });
+					const jstats = [it.costText, it.timeText, it.caseText].filter(Boolean);
+					if (jstats.length) head.createSpan({ cls: 'scys-stats', text: jstats.join(' · ') });
+				} else {
+					if (it.isDigested) head.createSpan({ cls: 'scys-badge scys-badge-digest', text: '精华' });
+					head.createSpan({ cls: 'scys-date', text: it.dateText || '' });
+					const stats = head.createSpan({ cls: 'scys-stats' });
+					if (it.likes) statSpan(stats, 'like', it.likes, '点赞');
+					if (it.reads) statSpan(stats, 'eye', it.reads, '阅读');
+					if (!stats.childElementCount) stats.remove();
+				}
+				this.mountTitle(card, it.title);
+				if (!compact && it.summary) {
+					const body = card.createDiv({ cls: 'scys-body' });
+					this.fillHighlighted(body, stripMd(it.summary, 100));
+				}
+				const foot = card.createDiv({ cls: 'scys-card-foot' });
+				if (it.author) foot.createSpan({ cls: 'scys-author', text: it.author });
+				foot.createSpan({ cls: 'scys-spacer' });
+				this.appendActions(foot, it);
 			}
 			card.onclick = (e) => {
-				if (e.target.tagName === 'BUTTON') return;
+				if (e.target.closest('button')) return;
 				if ((it.kind === 'rank' || it.kind === 'board') && it.url) window.open(it.url, '_blank');
 				else this.plugin.openDetail(it);
 			};
 		}
-		if (this.statusEl) {
-			this.statusEl.setText(`共 ${items.length} 条 · 更新于 ${new Date().toLocaleTimeString('zh-CN')}`);
+		this.renderStatus();
+	}
+
+	appendActions(foot, it) {
+		if (it.url) {
+			const openBtn = iconAction(foot, 'external-link', '浏览器打开');
+			openBtn.onclick = () => window.open(it.url, '_blank');
 		}
+		if (it.entityId) {
+			const detailBtn = iconAction(foot, 'file-text', '详情');
+			detailBtn.onclick = () => this.plugin.openDetail(it);
+		}
+		if (it.kind !== 'rank' && it.kind !== 'board') {
+			const saveBtn = iconAction(foot, 'bookmark', '收藏为笔记');
+			saveBtn.addClass('scys-save-btn');
+			saveBtn.onclick = () => this.plugin.saveAsNote(it);
+		}
+	}
+
+	mountTitle(parent, title) {
+		const el = parent.createDiv({ cls: 'scys-title' });
+		this.fillHighlighted(el, title);
+		if (title) el.setAttr('title', title);
+		return el;
+	}
+
+	renderStatus() {
+		if (!this.statusEl) return;
+		const el = this.statusEl;
+		el.empty();
+		const feed = this.feed || {};
+		const stamp = '更新于 ' + (this.updatedAt || new Date()).toLocaleTimeString('zh-CN');
+		if (feed.pager === 'top') {
+			el.createDiv({ cls: 'scys-page-label', text: (feed.topLabel || ('前 ' + this.items.length + ' 名')) + ' · ' + stamp });
+			if (feed.partialNote) el.createDiv({ cls: 'scys-page-note', text: feed.partialNote });
+			return;
+		}
+		const row = el.createDiv({ cls: 'scys-pager' });
+		const prev = row.createEl('button', { text: '上一页', cls: 'scys-mini-btn' });
+		prev.disabled = this.page <= 1 || this.loading;
+		prev.onclick = () => this.goPage(this.page - 1);
+		const totalBit = feed.total != null ? ' · 共 ' + feed.total + ' 条' : '';
+		row.createSpan({ cls: 'scys-page-label', text: '第 ' + this.page + ' 页 · 本页 ' + this.items.length + ' 条' + totalBit });
+		const next = row.createEl('button', { text: '下一页', cls: 'scys-mini-btn' });
+		next.disabled = !feed.hasMore || this.loading;
+		next.onclick = () => this.goPage(this.page + 1);
+		if (feed.partialNote) el.createDiv({ cls: 'scys-page-note', text: feed.partialNote });
+		el.createDiv({ cls: 'scys-page-time', text: stamp });
 	}
 
 	fillHighlighted(el, text) {
@@ -726,15 +981,20 @@ class TopicDetailModal extends Modal {
 		const { contentEl } = this;
 		if (d.stats) contentEl.createDiv({ cls: 'scys-detail-stats', text: d.stats });
 		const meta = contentEl.createDiv({ cls: 'scys-detail-meta' });
-		if (d.author) meta.createSpan({ text: '👤 ' + d.author });
-		if (d.date) meta.createSpan({ text: '🕒 ' + d.date });
-		if (d.likes != null) meta.createSpan({ text: '👍 ' + d.likes });
-		if (d.reads != null) meta.createSpan({ text: '👁 ' + d.reads });
+		const addMeta = (icon, text, label) => {
+			const s = meta.createSpan({ cls: 'scys-detail-bit', attr: { title: label } });
+			mountIcon(s, icon);
+			s.createSpan({ text: String(text) });
+		};
+		if (d.author) addMeta('person', d.author, '作者');
+		if (d.date) addMeta('clock', d.date, '时间');
+		if (d.likes != null) addMeta('like', d.likes, '点赞');
+		if (d.reads != null) addMeta('eye', d.reads, '阅读');
 		const bodyEl = contentEl.createDiv({ cls: 'scys-detail-body' });
 		bodyEl.appendText(String(d.content || ''));
 		contentEl.addClass('scys-detail-plain');
 		const foot = contentEl.createDiv({ cls: 'scys-detail-foot' });
-		const mdBtn = foot.createEl('button', { text: '📝 渲染为 Markdown', cls: 'scys-mini-btn' });
+		const mdBtn = labeledButton(foot, 'pen', '渲染为 Markdown');
 		mdBtn.onclick = async () => {
 			mdBtn.disabled = true;
 			try {
@@ -745,7 +1005,7 @@ class TopicDetailModal extends Modal {
 				mdBtn.disabled = false;
 			}
 		};
-		const saveBtn = foot.createEl('button', { text: '⭐ 收藏为笔记', cls: 'scys-mini-btn scys-save-btn' });
+		const saveBtn = labeledButton(foot, 'bookmark', '收藏为笔记', 'scys-mini-btn scys-save-btn');
 		saveBtn.onclick = () => {
 			this.plugin.saveAsNote(this.item, d);
 			this.close();
@@ -897,7 +1157,7 @@ class AskYiRenModal extends Modal {
 			}
 		}
 		const foot = el.createDiv({ cls: 'scys-ask-foot' });
-		const saveBtn = foot.createEl('button', { text: '⭐ 存为笔记', cls: 'scys-mini-btn scys-save-btn' });
+		const saveBtn = labeledButton(foot, 'bookmark', '存为笔记', 'scys-mini-btn scys-save-btn');
 		saveBtn.onclick = () => {
 			this.plugin.saveAsNote(
 				{ kind: 'yiren', entityId: null, url: '', title: '问亦仁：' + String(question || '').slice(0, 40), author: 'AI 亦仁', dateText: '', summary: '' },
@@ -934,21 +1194,7 @@ class ScysRadarSettingTab extends PluginSettingTab {
 				await this.plugin.saveSettings();
 			})
 		);
-		new Setting(containerEl).setName('列表显示摘要').setDesc('关闭后只显示标题，更紧凑').addToggle((t) =>
-			t.setValue(this.plugin.settings.showBody).onChange(async (v) => {
-				this.plugin.settings.showBody = v;
-				await this.plugin.saveSettings();
-			})
-		);
-		new Setting(containerEl).setName('热门帖拉取条数').setDesc('5-30').addText((t) =>
-			t.setValue(String(this.plugin.settings.hotPageSize)).onChange(async (v) => {
-				const n = parseInt(v, 10);
-				if (n >= 5 && n <= 30) {
-					this.plugin.settings.hotPageSize = n;
-					await this.plugin.saveSettings();
-				}
-			})
-		);
+		new Setting(containerEl).setName('每页条数和列表模式').setDesc('在雷达侧栏工具栏切换，会记住。可选 10 / 20 / 50，以及简洁、精简。热门、精华、搜索、超级标的每次向接口最多要 10 条，20 和 50 会连续请求后拼成一页。榜单和 Token 榜显示前 N 名，没有第 2 页。');
 		new Setting(containerEl).setName('航海显示已结束').setDesc('默认只看「即将开放 / 报名中 / 进行中」；打开后可翻阅全部历史航海（约 380 条、37 期），便于回溯往期选题').addToggle((t) =>
 			t.setValue(!!this.plugin.settings.sailIncludeFinished).onChange(async (v) => {
 				this.plugin.settings.sailIncludeFinished = v;
@@ -986,7 +1232,7 @@ class ScysRadarSettingTab extends PluginSettingTab {
 				b.setButtonText(this.plugin.oauth.hasAuth ? '重新授权' : '去授权').onClick(async () => {
 					try {
 						await this.plugin.login();
-						new Notice('✅ 授权成功');
+						notify('check', '授权成功');
 						this.display();
 					} catch (e) {
 						new Notice('授权失败：' + e.message, 8000);
@@ -1059,7 +1305,15 @@ class ScysRadarPlugin extends Plugin {
 	onunload() {}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const data = await this.loadData();
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+		if (!PAGE_SIZES.includes(Number(this.settings.pageSize))) {
+			const old = Number(data && data.hotPageSize);
+			this.settings.pageSize = PAGE_SIZES.includes(old) ? old : 20;
+		}
+		if (this.settings.listMode !== 'compact' && this.settings.listMode !== 'brief') {
+			this.settings.listMode = data && data.showBody === false ? 'compact' : 'brief';
+		}
 	}
 
 	async saveSettings() {
@@ -1109,119 +1363,160 @@ class ScysRadarPlugin extends Plugin {
 		return this.client;
 	}
 
-	async fetchHot() {
-		const c = await this.readyClient();
-		const dayAgo = Math.floor(Date.now() / 1000) - 86400 * 7;
-		const r = await c.callTool('searchTopic', { isHot: true, gmtCreateStart: dayAgo, displayMode: 1, pageIndex: 1, pageSize: Math.min(this.settings.hotPageSize, 30) });
-		const items = (r && r.items) || [];
-		return items.map((x) => {
-			const t = (x && x.topicDTO) || {};
-			return {
-				kind: 'topic', entityId: t.entityId, url: x.detailUrl, title: t.showTitle || '(无标题)',
-				summary: t.articleContent || '', author: ((x.topicUserDTO || {}).name) || '', isDigested: !!t.isDigested,
-				likes: t.likeCount, reads: t.readingCount, dateText: tsToDate(t.gmtCreate), raw: t,
-			};
-		});
+	pageArgs() {
+		return { pageSize: normalizePageSize(this.settings.pageSize) };
 	}
 
-	async fetchGood() {
-		const c = await this.readyClient();
-		const r = await c.callTool('searchTopic', { isDigested: true, displayMode: 1, pageIndex: 1, pageSize: Math.min(this.settings.hotPageSize, 30) });
-		const items = (r && r.items) || [];
-		return items.map((x) => {
-			const t = (x && x.topicDTO) || {};
-			return {
-				kind: 'topic', entityId: t.entityId, url: x.detailUrl, title: t.showTitle || '(无标题)',
-				summary: t.articleContent || '', author: ((x.topicUserDTO || {}).name) || '', isDigested: true,
-				likes: t.likeCount, reads: t.readingCount, dateText: tsToDate(t.gmtCreate), raw: t,
-			};
-		});
-	}
-
-	async fetchFxb() {
-		const c = await this.readyClient();
-		const r = await c.callTool('contentSearch', { pageScene: 'fxb', displayMode: 1, pageIndex: 1, pageSize: 15 });
-		const items = (r && r.topicDetailDTO && r.topicDetailDTO.items) || [];
-		return items.map((x) => {
-			const t = (x && x.topicDTO) || {};
-			return {
-				kind: 'topic', entityId: t.entityId, url: 'https://scys.com/articleDetail/' + (t.entityType || 'xq_topic') + '/' + t.entityId,
-				title: t.showTitle || '(无标题)', summary: t.articleContent || '', author: ((x.topicUserDTO || {}).name) || '',
-				isDigested: !!t.isDigested, likes: t.likeCount, reads: t.readingCount, dateText: tsToDate(t.gmtCreate), raw: t,
-			};
-		});
-	}
-
-	async fetchSail() {
-		const c = await this.readyClient();
-		const order = { 1: 0, 2: 1, 3: 2, 4: 3 };
-		// activityList 的 status 是单值过滤：1即将开放 2报名中 3进行中 4已结束。
-		// 不传 status 时，首页返回的几乎全是已结束的历史航海（占了 380 条里的绝大多数），
-		// 若只在本地 filter 掉 status=4，结果就是 0 条 —— 这正是「航海是空的」的根因。
-		// 因此必须让服务端按 status 过滤，逐个状态取（串行，避免同一 MCP session 并发）。
-		const wantFinished = !!this.settings.sailIncludeFinished;
-		const statuses = wantFinished ? [1, 2, 3, 4] : [1, 2, 3];
-		const list = [];
-		for (const st of statuses) {
-			try {
-				const r = await c.callTool('activityList', { status: st, pageIndex: 1, pageSize: st === 4 ? 30 : 15 });
-				for (const a of (r && r.items) || []) {
-					if (!list.some((x) => x.id === a.id)) list.push(a);
-				}
-			} catch (e) {
-				this.log('fetchSail status=' + st + ' 失败: ' + e.message);
-			}
-		}
-		const items = list.filter((a) => statuses.includes(a.status));
-		return items
-			.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || (b.gmtSail || 0) - (a.gmtSail || 0))
-			.map((a) => ({
-				kind: 'sail', entityId: null, url: 'https://scys.com/activity', title: a.name,
-				typeLabel: a.type + ' · ' + (a.statusDesc || ''), summary: (a.target || '') + (a.platformList && a.platformList.length ? '（' + a.platformList.join('/') + '）' : ''),
-				author: a.label || '', isDigested: false,
-				likes: null, reads: null,
-				dateText: a.status === 2 ? '报名截止 ' + tsToDate(a.gmtEnrollEnd) : a.status === 3 ? '航行中（起航 ' + tsToDate(a.gmtSail) + '）' : '即将开放 ' + tsToDate(a.gmtStart),
-				raw: a,
-			}));
-	}
-
-	mapTopic(x) {
+	mapTopic(x, kind) {
 		const t = (x && x.topicDTO) || {};
+		const anchors = finiteNum(t.coinCount);
 		return {
-			kind: 'topic', entityId: t.entityId, url: x.detailUrl, title: t.showTitle || '(无标题)',
-			summary: t.articleContent || '', author: ((x.topicUserDTO || {}).name) || '', isDigested: !!t.isDigested,
-			likes: t.likeCount, reads: t.readingCount, dateText: tsToDate(t.gmtCreate), raw: t,
+			kind: kind || 'topic',
+			entityId: t.entityId,
+			url: x.detailUrl || (t.entityId ? 'https://scys.com/articleDetail/' + (t.entityType || 'xq_topic') + '/' + t.entityId : ''),
+			title: t.showTitle || '(无标题)',
+			summary: t.articleContent || '',
+			author: ((x.topicUserDTO || {}).name) || '',
+			isDigested: !!t.isDigested,
+			likes: finiteNum(t.likeCount),
+			reads: finiteNum(t.readingCount),
+			comments: finiteNum(t.commentsCount),
+			anchors,
+			dateText: tsToDate(t.gmtCreate),
+			relText: relTime(t.gmtCreate),
+			raw: t,
 		};
 	}
 
-	async fetchSearch(kw) {
+	async fetchSearchTopic(baseArgs, page) {
 		const c = await this.readyClient();
-		const r = await c.callTool('searchTopic', { keyword: kw, displayMode: 1, pageIndex: 1, pageSize: Math.min(this.settings.hotPageSize, 30) });
-		return ((r && r.items) || []).map((x) => this.mapTopic(x));
+		const size = this.pageArgs().pageSize;
+		const span = mcpWindow(page || 1, size, SEARCH_TOPIC_CAP);
+		const items = [];
+		let total = null;
+		let partialNote = '';
+		for (let i = 0; i < span.count; i++) {
+			const pageIndex = span.start + i;
+			let r;
+			try {
+				r = await c.callTool('searchTopic', Object.assign({}, baseArgs, { displayMode: 1, pageIndex, pageSize: SEARCH_TOPIC_CAP }));
+			} catch (e) {
+				if (!items.length) throw e;
+				partialNote = '这一页只拿到 ' + items.length + ' 条：' + e.message;
+				break;
+			}
+			const batch = ((r && r.items) || []).map((x) => this.mapTopic(x));
+			const reported = finiteNum(r && r.total);
+			if (reported != null) total = reported;
+			items.push(...batch);
+			if (batch.length < SEARCH_TOPIC_CAP) break;
+			if (total != null && pageIndex * SEARCH_TOPIC_CAP >= total) break;
+		}
+		const hasMore = total != null ? (page || 1) * size < total : items.length >= size;
+		return { items, total, hasMore: hasMore && !partialNote, partialNote, pager: 'page' };
 	}
 
-	async fetchSuper() {
+	async fetchHot(page) {
+		const dayAgo = Math.floor(Date.now() / 1000) - 86400 * 7;
+		return this.fetchSearchTopic({ isHot: true, gmtCreateStart: dayAgo }, page);
+	}
+
+	async fetchGood(page) {
+		return this.fetchSearchTopic({ isDigested: true }, page);
+	}
+
+	async fetchScene(scene, page) {
+		const c = await this.readyClient();
+		const size = this.pageArgs().pageSize;
+		const pageIndex = page || 1;
+		const r = await c.callTool('contentSearch', { pageScene: scene, displayMode: 1, pageIndex, pageSize: size });
+		const box = (r && r.topicDetailDTO) || {};
+		const items = (box.items || []).map((x) => this.mapTopic(x));
+		const total = finiteNum(box.total);
+		const hasMore = items.length >= size && (total == null || pageIndex * size < total);
+		return { items, total, hasMore, partialNote: '', pager: 'page' };
+	}
+
+	fetchFxb(page) {
+		return this.fetchScene('fxb', page);
+	}
+
+	fetchWinBid(page) {
+		return this.fetchScene('winBid', page);
+	}
+
+	mapSail(a) {
+		return {
+			kind: 'sail', entityId: null, url: 'https://scys.com/activity', title: a.name,
+			typeLabel: a.type + ' · ' + (a.statusDesc || ''), summary: (a.target || '') + (a.platformList && a.platformList.length ? '（' + a.platformList.join('/') + '）' : ''),
+			author: a.label || '', isDigested: false,
+			likes: null, reads: null,
+			dateText: a.status === 2 ? '报名截止 ' + tsToDate(a.gmtEnrollEnd) : a.status === 3 ? '航行中（起航 ' + tsToDate(a.gmtSail) + '）' : a.status === 4 ? '已结束 ' + tsToDate(a.gmtEnd || a.gmtSail) : '即将开放 ' + tsToDate(a.gmtStart),
+			raw: a,
+		};
+	}
+
+	async fetchSail(page) {
+		const c = await this.readyClient();
+		const size = this.pageArgs().pageSize;
+		const wantFinished = !!this.settings.sailIncludeFinished;
+		const pageIndex = wantFinished ? Math.max(1, Number(page) || 1) : 1;
+		const order = { 1: 0, 2: 1, 3: 2 };
+		// activityList 的 status 是单值过滤：1即将开放 2报名中 3进行中 4已结束。
+		// 不传 status 时首页几乎全是已结束。进行中的只钉在第 1 页，翻页只翻已结束。
+		let ongoing = [];
+		if (pageIndex === 1 || this._sailPinCount == null) {
+			const pinned = [];
+			for (const st of [1, 2, 3]) {
+				try {
+					const r = await c.callTool('activityList', { status: st, pageIndex: 1, pageSize: 50 });
+					for (const a of (r && r.items) || []) {
+						if (!pinned.some((x) => x.id === a.id)) pinned.push(a);
+					}
+				} catch (e) {
+					this.log('fetchSail status=' + st + ' 失败: ' + e.message);
+				}
+			}
+			ongoing = pinned.filter((a) => [1, 2, 3].includes(a.status))
+				.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || (b.gmtSail || 0) - (a.gmtSail || 0));
+			this._sailPinCount = ongoing.length;
+		}
+		if (!wantFinished) {
+			const shown = pageIndex === 1 ? ongoing : [];
+			return { items: shown.map((a) => this.mapSail(a)), total: this._sailPinCount || shown.length, hasMore: false, partialNote: '', pager: 'page', page: 1 };
+		}
+		const r = await c.callTool('activityList', { status: 4, pageIndex, pageSize: size });
+		const ended = (r && r.items) || [];
+		const endedTotal = finiteNum(r && r.total);
+		const knownEnded = endedTotal == null ? ended.length : endedTotal;
+		const items = (pageIndex === 1 ? ongoing.concat(ended) : ended).map((a) => this.mapSail(a));
+		const pin = this._sailPinCount || 0;
+		return {
+			items,
+			total: pin + knownEnded,
+			hasMore: pageIndex * size < knownEnded,
+			partialNote: '',
+			pager: 'page',
+		};
+	}
+
+	async fetchSearch(kw, page) {
+		return this.fetchSearchTopic({ keyword: kw }, page);
+	}
+
+	async fetchSuper(page) {
 		// 「超级标的」= 亦仁发布的【超级标 XX】系列，对应官方标签 menuId 2634453
-		const c = await this.readyClient();
-		const r = await c.callTool('searchTopic', { includeMenuIdList: ['2634453'], displayMode: 1, pageIndex: 1, pageSize: 30 });
-		return ((r && r.items) || []).map((x) => this.mapTopic(x));
-	}
-
-	async fetchSelectedFxb() {
-		const c = await this.readyClient();
-		const r = await c.callTool('contentSearch', { pageScene: 'fxb', displayMode: 1, pageIndex: 1, pageSize: 30 });
-		return ((r && r.topicDetailDTO && r.topicDetailDTO.items) || [])
-			.filter((x) => x.isSelected || x.isBid || (x.topicDTO && (x.topicDTO.isSelected || x.topicDTO.isBid || x.topicDTO.isChosen)))
-			.map((x) => this.mapTopic(x));
+		return this.fetchSearchTopic({ includeMenuIdList: ['2634453'] }, page);
 	}
 
 	async fetchTokenRank() {
 		const accessToken = await this.oauth.validToken();
 		const headers = accessToken ? { Authorization: 'Bearer ' + accessToken } : {};
 		const base = this.settings.tokenRankEndpoint;
+		const size = this.pageArgs().pageSize;
 		const [mine, r] = await Promise.all([
 			requestUrlJson({ url: 'https://scys.com/tokenrank/api/subapp/me-lab?range=7d', headers }),
-			requestUrlJson({ url: base + '?range=7d&board=total&metric=total&limit=30', headers }),
+			requestUrlJson({ url: base + '?range=7d&board=total&metric=total&limit=' + size, headers }),
 		]);
 		if (mine && mine.status === -401) throw new Error('Token 排行榜尚未识别当前生财账户，请在官网完成 Token 排行榜登录后重试。');
 		if (!mine || mine.status !== 0 || !r || r.status !== 0) throw new Error((mine && mine.message) || (r && r.message) || 'Token 榜单暂时不可用');
@@ -1235,23 +1530,37 @@ class ScysRadarPlugin extends Plugin {
 		};
 		this.tokenProfile = { shareUrl: myItem.url, userId };
 		const entries = (r.entries || []).filter((x) => !userId || x.userId !== userId).map((x) => ({ kind: 'rank', rank: x.rank, tokens: x.score, title: x.name || '匿名用户', summary: '主力工具：' + Object.keys(x.byTool || {}).join(' / ') + (x.primaryModel ? ' · ' + x.primaryModel : ''), author: '', url: 'https://scys.com/tokenrank/u/' + x.userId }));
-		return [myItem].concat(entries);
+		return { items: [myItem].concat(entries), total: null, hasMore: false, partialNote: '', pager: 'top', topLabel: '前 ' + entries.length + ' 名' };
 	}
 
 	async fetchContentBoards() {
-		const [fxb, hot] = await Promise.all([this.fetchFxb(), this.fetchHot()]);
-		const anchor = (x) => Number((x.raw && (x.raw.anchorCount || x.raw.anchorNum || x.raw.voteCount)) || 0);
+		const size = this.pageArgs().pageSize;
+		const fxbRes = await this.fetchFxb(1);
+		const hotRes = await this.fetchHot(1);
+		const fxb = fxbRes.items || [];
+		const hot = hotRes.items || [];
+		const anchor = (x) => (x.anchors != null ? Number(x.anchors) : Number((x.raw && (x.raw.coinCount || x.raw.anchorCount || x.raw.anchorNum || x.raw.voteCount)) || 0)) || 0;
 		const weekStart = Date.now() - 7 * 86400000;
 		const createdAt = (x) => { const n = Number(x.raw && x.raw.gmtCreate) || 0; return n < 1e12 ? n * 1000 : n; };
-		const weekly = fxb.filter((x) => createdAt(x) >= weekStart).sort((a, b) => anchor(b) - anchor(a)).slice(0, 10).map((x) => ({ ...x, kind: 'board', typeLabel: '锚点榜 · 周榜', anchorCount: anchor(x) }));
-		const total = fxb.slice().sort((a, b) => anchor(b) - anchor(a)).slice(0, 10).map((x) => ({ ...x, kind: 'board', typeLabel: '总投锚榜', anchorCount: anchor(x) }));
-		const likes = hot.slice().sort((a, b) => Number(b.likes || 0) - Number(a.likes || 0)).slice(0, 10).map((x) => ({ ...x, kind: 'board', typeLabel: '文章点赞榜' }));
-		return weekly.concat(total, likes);
+		const asBoard = (list, typeLabel) => list.map((x) => ({ ...x, kind: 'board', typeLabel, anchorCount: anchor(x), anchors: anchor(x) }));
+		const weekly = asBoard(fxb.filter((x) => createdAt(x) >= weekStart).sort((a, b) => anchor(b) - anchor(a)).slice(0, size), '锚点榜 · 周榜');
+		const total = asBoard(fxb.slice().sort((a, b) => anchor(b) - anchor(a)).slice(0, size), '总投锚榜');
+		const likes = asBoard(hot.slice().sort((a, b) => Number(b.likes || 0) - Number(a.likes || 0)).slice(0, size), '文章点赞榜');
+		return {
+			items: weekly.concat(total, likes),
+			total: null,
+			hasMore: false,
+			partialNote: [fxbRes.partialNote, hotRes.partialNote].filter(Boolean).join(' '),
+			pager: 'top',
+			topLabel: '每个榜前 ' + size + ' 名',
+		};
 	}
 
-	async fetchParties(scope) {
+	async fetchParties(scope, page) {
 		const c = await this.readyClient();
-		const args = { pageIndex: 1, pageSize: 30, partyStatuses: ['APPROVED'] };
+		const size = this.pageArgs().pageSize;
+		const pageIndex = page || 1;
+		const args = { pageIndex, pageSize: size, partyStatuses: ['APPROVED'] };
 		if (scope === 'local') {
 			const province = String(this.settings.partyProvince || '').trim();
 			const city = String(this.settings.partyCity || '').trim();
@@ -1263,8 +1572,8 @@ class ScysRadarPlugin extends Plugin {
 		}
 		if (this.settings.partyOnlyFuture) args.startTimeFrom = Math.floor(Date.now() / 1000);
 		const r = await c.callTool('searchParties', args);
-		const items = (r && r.items) || [];
-		return items
+		const rows = (r && r.items) || [];
+		const items = rows
 			.sort((a, b) => (a.startTime || 0) - (b.startTime || 0))
 			.map((p) => {
 				const place = [p.province === p.city ? null : p.province, p.city, p.district].filter(Boolean).join(' · ');
@@ -1278,13 +1587,20 @@ class ScysRadarPlugin extends Plugin {
 					isDigested: !!p.isDigested, author: '', likes: null, reads: null, raw: p,
 				};
 			});
+		const total = finiteNum(r && r.total);
+		let hasMore;
+		if (r && typeof r.hasNext === 'boolean') hasMore = r.hasNext;
+		else hasMore = items.length >= size && (total == null || pageIndex * size < total);
+		return { items, total, hasMore, partialNote: '', pager: 'page' };
 	}
 
-	async fetchProjectLib() {
+	async fetchProjectLib(page) {
 		const c = await this.readyClient();
-		const r = await c.callTool('projectLibList', { sortType: 'latest', pageIndex: 1, pageSize: 30 });
-		const items = (r && r.items) || [];
-		return items.map((p) => {
+		const size = this.pageArgs().pageSize;
+		const pageIndex = page || 1;
+		const r = await c.callTool('projectLibList', { sortType: 'latest', pageIndex, pageSize: size });
+		const rows = (r && r.items) || [];
+		const items = rows.map((p) => {
 			const tags = [].concat(p.platformMenus || [], p.monetizeMenus || [], p.crowdMenus || []).map((m) => m && m.name).filter(Boolean);
 			const income = p.incomeMin != null && p.incomeMax != null ? '¥' + p.incomeMin + '~' + p.incomeMax + ' / 月' : '';
 			const parts = [p.summary || '', p.highlightText ? '（' + p.highlightText + '）' : '', tags.length ? tags.join(' / ') : ''].filter(Boolean).join(' · ');
@@ -1298,6 +1614,9 @@ class ScysRadarPlugin extends Plugin {
 				dateText: tsToDate(p.gmtPublish), isDigested: false, raw: p,
 			};
 		});
+		const total = finiteNum(r && r.total);
+		const hasMore = items.length >= size && (total == null || pageIndex * size < total);
+		return { items, total, hasMore, partialNote: '', pager: 'page' };
 	}
 
 	async openAskYiRen(initial) {
@@ -1387,7 +1706,7 @@ class ScysRadarPlugin extends Plugin {
 			const fm = ['---', 'title: ' + JSON.stringify(item.title || ''), 'source: ' + (item.url || ''), 'author: ' + JSON.stringify(item.author || ''), 'date_saved: ' + new Date().toISOString().slice(0, 10), 'type: scys-' + (item.kind === 'sail' ? 'sail' : 'topic'), item.isDigested ? 'digest: true' : '', hits && hits.length ? 'interest_tags: [' + hits.join(', ') + ']' : '', '---'].filter(Boolean).join('\n');
 			let body = '';
 			if (d && d.content) {
-				body = '# ' + (d.title || item.title) + '\n\n' + d.content + '\n\n---\n> 👤 ' + (d.author || '') + ' · 🕒 ' + (d.date || '') + ' · [原帖链接](' + (d.url || item.url || '') + ')\n';
+				body = '# ' + (d.title || item.title) + '\n\n' + d.content + '\n\n---\n> 作者 ' + (d.author || '') + ' · 时间 ' + (d.date || '') + ' · [原帖链接](' + (d.url || item.url || '') + ')\n';
 			} else if (item.kind === 'sail') {
 				body = '# ' + item.title + '\n\n' + (item.summary || '') + '\n\n> ' + (item.dateText || '') + ' · ' + (item.typeLabel || '') + '\n';
 			} else {
@@ -1403,7 +1722,7 @@ class ScysRadarPlugin extends Plugin {
 				return;
 			}
 			const f = await this.app.vault.create(path, fm + '\n\n' + body);
-			new Notice('⭐ 已收藏：' + title);
+			notify('bookmark', '已收藏：' + title);
 			this.app.workspace.getLeaf(true).openFile(f);
 		} catch (e) {
 			new Notice('收藏失败：' + e.message, 6000);

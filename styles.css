@@ -53,6 +53,9 @@
 }
 
 .scys-tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 	background: transparent;
 	border: 1px solid transparent;
 	padding: 4px 10px;
@@ -73,6 +76,9 @@
 }
 
 .scys-mini-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 	background: var(--interactive-normal);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
@@ -80,6 +86,41 @@
 	font-size: var(--font-ui-smaller);
 	cursor: pointer;
 	color: var(--text-normal);
+}
+
+.scys-icon-btn {
+	width: 26px;
+	height: 24px;
+	padding: 0;
+	justify-content: center;
+	flex: 0 0 auto;
+}
+
+.scys-icon-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+.scys-ico {
+	display: inline-flex;
+	width: 14px;
+	height: 14px;
+	flex: 0 0 14px;
+	align-items: center;
+	justify-content: center;
+	color: currentColor;
+}
+
+.scys-ico svg {
+	width: 14px;
+	height: 14px;
+	display: block;
+}
+
+.scys-notice-line {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 }
 
 .scys-mini-btn:hover {
@@ -114,10 +155,6 @@
 
 .scys-card:hover {
 	border-color: var(--interactive-accent);
-}
-
-.scys-card-digest {
-	border-left: 3px solid var(--color-accent, #d4a017);
 }
 
 .scys-card-head {
@@ -156,12 +193,28 @@
 .scys-stats {
 	color: var(--text-faint);
 	margin-left: auto;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.scys-stat {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	flex: 0 0 auto;
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
 }
 
 .scys-title {
 	font-weight: 600;
 	line-height: 1.4;
 	margin-bottom: 2px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .scys-body {
@@ -178,13 +231,25 @@
 .scys-card-foot {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 8px;
+	flex-wrap: nowrap;
+	min-width: 0;
 	font-size: var(--font-ui-smaller);
 	color: var(--text-faint);
 }
 
-.scys-author {
+.scys-author,
+.scys-meta-text {
 	color: var(--text-muted);
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.scys-meta-text {
+	color: var(--text-faint);
 }
 
 .scys-hl {
@@ -200,6 +265,61 @@
 	font-size: var(--font-ui-smaller);
 	color: var(--text-faint);
 	text-align: center;
+}
+
+.scys-pager {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.scys-page-label {
+	color: var(--text-muted);
+}
+
+.scys-page-note {
+	margin-top: 4px;
+	color: var(--text-warning, var(--text-muted));
+}
+
+.scys-page-time {
+	margin-top: 2px;
+	color: var(--text-faint);
+}
+
+.scys-mini-btn:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.scys-title-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	margin-bottom: 2px;
+}
+
+.scys-title-row .scys-badge {
+	flex: 0 0 auto;
+}
+
+.scys-title-row .scys-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	margin-bottom: 0;
+}
+
+.scys-card-compact {
+	padding: 8px 10px;
+}
+
+.scys-detail-bit {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 }
 
 .scys-detail {
@@ -317,8 +437,12 @@
 }
 
 .scys-place {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
+	min-width: 0;
 }
 
 .scys-income {
