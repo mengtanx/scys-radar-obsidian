@@ -1,7 +1,7 @@
 {
   "id": "scys-radar-mx",
   "name": "Scys Radar MX",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "minAppVersion": "1.5.0",
   "description": "个人维护的生财雷达，可与社区版 scys-radar 同时安装。热门、项目、中标、超级标的、Token 榜单与聚会，支持搜索、问亦仁和一键收藏。",
   "author": "mengtanx",
