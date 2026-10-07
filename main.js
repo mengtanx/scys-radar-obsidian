@@ -252,7 +252,32 @@ function mapTokenRankEntry(x) {
 	};
 }
 
-// me-lab 用官网 cookie。插件的 requestUrl 只带 MCP Bearer，失败时仍返回公开榜。
+function scysCookieHeader(cookies) {
+	return (cookies || [])
+		.filter((c) => c && c.name && c.value != null && c.value !== '')
+		.map((c) => c.name + '=' + c.value)
+		.join('; ');
+}
+
+// requestUrl 走默认会话，读不到库分区里的官网 cookie。只把 scys.com 的 cookie 加到 Token 榜请求上。
+async function readScysCookieHeader() {
+	try {
+		const electron = require('electron');
+		let remote = electron.remote;
+		if (!remote) {
+			try { remote = require('@electron/remote'); } catch (e) { remote = null; }
+		}
+		if (!remote || !remote.session || !electron.ipcRenderer) return '';
+		const info = electron.ipcRenderer.sendSync('vault');
+		const id = info && info.id;
+		if (!id) return '';
+		const cookies = await remote.session.fromPartition('persist:vault-' + id).cookies.get({ url: 'https://scys.com/' });
+		return scysCookieHeader(cookies);
+	} catch (e) {
+		return '';
+	}
+}
+
 function buildTokenRank(mine, r) {
 	if (!r || r.status !== 0) throw new Error((r && r.message) || 'Token 榜单暂时不可用');
 	const identified = !!(mine && mine.status === 0);
@@ -1764,6 +1789,8 @@ class ScysRadarPlugin extends Plugin {
 	async fetchTokenRank() {
 		const accessToken = await this.oauth.validToken();
 		const headers = accessToken ? { Authorization: 'Bearer ' + accessToken } : {};
+		const cookie = await readScysCookieHeader();
+		if (cookie) headers.Cookie = cookie;
 		const base = this.settings.tokenRankEndpoint;
 		const size = this.pageArgs().pageSize;
 		const [mine, r] = await Promise.all([
