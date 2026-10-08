@@ -1,3 +1,46 @@
+.scys-root,
+.scys-detail,
+.scys-settings {
+	--scys-brand: rgb(57, 159, 140);
+	--scys-brand-text: rgb(46, 129, 113);
+	--scys-brand-wash: rgba(57, 159, 140, 0.12);
+	--scys-on-brand: #1c1917;
+	--scys-brand-hover: rgb(46, 129, 113);
+	--interactive-accent: var(--scys-brand);
+	--interactive-accent-hover: var(--scys-brand-hover);
+	--text-accent: var(--scys-brand-text);
+	--text-on-accent: var(--scys-on-brand);
+}
+
+.theme-dark .scys-root,
+.theme-dark .scys-detail,
+.theme-dark .scys-settings {
+	--scys-brand-text: rgb(57, 159, 140);
+	--scys-brand-wash: rgba(57, 159, 140, 0.2);
+	--text-accent: var(--scys-brand-text);
+}
+
+.scys-root a,
+.scys-root a:hover,
+.scys-detail a,
+.scys-detail a:hover,
+.scys-settings a,
+.scys-settings a:hover {
+	color: var(--scys-brand-text);
+}
+
+.scys-root button.mod-cta,
+.scys-detail button.mod-cta {
+	background-color: var(--scys-brand);
+	color: var(--scys-on-brand);
+}
+
+.scys-root button.mod-cta:hover,
+.scys-detail button.mod-cta:hover {
+	background-color: var(--scys-brand-hover);
+	color: var(--scys-on-brand);
+}
+
 .scys-root {
 	padding: 12px;
 	display: flex;
@@ -66,8 +109,9 @@
 }
 
 .scys-tab-active {
-	background: var(--background-modifier-active-hover);
-	border-color: var(--background-modifier-border);
+	background: var(--scys-brand-wash);
+	border-color: transparent;
+	color: var(--scys-brand-text);
 	font-weight: 600;
 }
 
@@ -127,15 +171,11 @@
 	background: var(--interactive-hover);
 }
 
-.scys-mini-btn.is-on {
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
-}
-
+.scys-mini-btn.is-on,
 .scys-mini-btn.scys-icon-btn.is-on {
 	background: var(--interactive-normal);
-	color: var(--interactive-accent);
-	border-color: var(--interactive-accent);
+	color: var(--scys-brand-text);
+	border-color: var(--scys-brand);
 }
 
 .scys-mini-btn.scys-icon-btn.is-on:hover {
@@ -163,7 +203,7 @@
 
 .scys-select:focus {
 	outline: none;
-	border-color: var(--interactive-accent);
+	border-color: var(--scys-brand);
 }
 
 .scys-list {
@@ -188,7 +228,7 @@
 }
 
 .scys-card:hover {
-	border-color: var(--interactive-accent);
+	border-color: var(--scys-brand);
 }
 
 .scys-card-head {
@@ -222,7 +262,10 @@
 	background: var(--background-modifier-hover);
 }
 
-.scys-badge-rank { background: var(--interactive-accent); color: var(--text-on-accent); }
+.scys-badge-rank {
+	background: var(--scys-brand-wash);
+	color: var(--scys-brand-text);
+}
 .scys-badge-board { background: var(--background-modifier-hover); color: var(--text-muted); }
 
 .scys-date {
@@ -532,7 +575,7 @@
 }
 
 .scys-search-input:focus {
-	border-color: var(--interactive-accent);
+	border-color: var(--scys-brand);
 	outline: none;
 }
 
@@ -562,20 +605,21 @@
 	color: var(--text-normal);
 }
 
-.scys-subtab-active {
-	background: var(--interactive-accent);
-	color: var(--interactive-accent-text);
-	border-color: var(--interactive-accent);
+.scys-subtab-active,
+.scys-subtab-active:hover {
+	background: var(--scys-brand-wash);
+	color: var(--scys-brand-text);
+	border-color: transparent;
 }
 
 .scys-badge-party {
-	background: rgba(29, 158, 117, 0.12);
-	color: var(--color-green, #1d9e75);
+	background: var(--scys-brand-wash);
+	color: var(--scys-brand-text);
 }
 
 .scys-badge-proj {
-	background: rgba(83, 74, 183, 0.12);
-	color: var(--color-purple, #534ab7);
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
 }
 
 .scys-place {
@@ -588,7 +632,7 @@
 }
 
 .scys-income {
-	color: var(--text-accent);
+	color: var(--scys-brand-text);
 	font-size: var(--font-ui-smaller);
 	font-weight: 500;
 }

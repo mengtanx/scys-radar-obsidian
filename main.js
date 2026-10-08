@@ -1582,6 +1582,7 @@ class ScysRadarSettingTab extends PluginSettingTab {
 	display() {
 		const { containerEl } = this;
 		containerEl.empty();
+		containerEl.addClass('scys-settings');
 		new Setting(containerEl).setName('MCP 端点').setDesc('生财 MCP 服务地址，一般无需修改').addText((t) =>
 			t.setValue(this.plugin.settings.endpoint).onChange(async (v) => {
 				this.plugin.settings.endpoint = v.trim();
