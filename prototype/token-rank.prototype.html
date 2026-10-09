@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>原型 · Token 榜窄栏</title>
+<style>
+  :root {
+    --demo: #5b4bdb;
+    --demo-ink: #1d1d21;
+    --demo-muted: #5e5e66;
+    --demo-line: #e2e2e6;
+    --demo-bg: #f3f3f5;
+    --pane: #212121;
+    --pane-2: #2a2a2a;
+    --line: #3a3a3a;
+    --text: #ececec;
+    --muted: #a3a3a3;
+    --faint: #8a8a8a;
+    --accent: #8b7cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--demo-bg);
+    color: var(--demo-ink);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "PingFang SC", sans-serif;
+  }
+  header { padding: 14px 24px 4px; max-width: 1120px; }
+  .mark {
+    display: inline-block;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--demo);
+    font-weight: 700;
+  }
+  h1 { font-size: 22px; margin: 4px 0 8px; }
+  header p { margin: 0; max-width: 760px; color: var(--demo-muted); }
+  main {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 20px;
+    align-items: start;
+    padding: 16px 24px 40px;
+    max-width: 1120px;
+  }
+  .pane {
+    width: 440px;
+    height: 680px;
+    background: var(--pane);
+    color: var(--text);
+    color-scheme: dark;
+    border-radius: 12px;
+    border: 1px solid #111;
+    box-shadow: 0 12px 40px rgba(0,0,0,.18);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: 13px;
+  }
+  .search, .tabs { padding: 8px 10px 0; }
+  .search { display: flex; gap: 6px; padding-top: 10px; }
+  .search input, .ghost {
+    background: #2e2e2e;
+    color: var(--faint);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 12px;
+  }
+  .search input { flex: 1; min-width: 0; padding: 5px 8px; }
+  .ghost { padding: 4px 8px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .tab, .iconbtn, .textbtn, .tools select {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .tab { display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; color: #cfcfcf; }
+  .tab svg, .iconbtn svg { width: 14px; height: 14px; display: block; }
+  .tab.on { background: #333; border-color: var(--line); font-weight: 650; color: white; }
+  .tools { display: flex; gap: 4px; align-items: center; flex-wrap: nowrap; padding: 8px 10px; }
+  .spacer { flex: 1; }
+  .textbtn, .tools select {
+    background: #333;
+    border-color: var(--line);
+    padding: 2px 6px;
+    height: 24px;
+    flex: 0 0 auto;
+  }
+  .iconbtn {
+    width: 26px; height: 24px; padding: 0;
+    display: grid; place-items: center;
+    background: #333; border-color: var(--line);
+  }
+  .guest {
+    margin: 0 10px 8px;
+    text-align: left;
+    background: transparent;
+    color: #c8c8c8;
+    border: 1px dashed #5c5c5c;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .list { flex: 1; overflow: auto; padding: 0 6px 8px; }
+  .row {
+    display: grid;
+    grid-template-columns: 2.4em 22px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    column-gap: 8px;
+    row-gap: 1px;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    padding: 6px 6px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  .list .row + .row { box-shadow: inset 0 1px 0 var(--line); }
+  .row:hover { background: rgba(255,255,255,.04); }
+  .row.me { background: rgba(139, 124, 255, .16); }
+  .row.me:hover { background: rgba(139, 124, 255, .24); }
+  .rank {
+    grid-column: 1; grid-row: 1 / span 2;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  .rank.top { color: white; font-weight: 750; }
+  .avatar {
+    grid-column: 2; grid-row: 1 / span 2;
+    width: 22px; height: 22px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 11px; color: white;
+    background: hsl(var(--h), 42%, 42%);
+  }
+  .avatar.empty { background: transparent; box-shadow: inset 0 0 0 1px #5c5c5c; }
+  .who { grid-column: 3; grid-row: 1; display: flex; gap: 4px; min-width: 0; align-items: center; overflow: hidden; }
+  .who .n { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag {
+    flex: 0 0 auto;
+    font-size: 10px;
+    line-height: 16px;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: rgba(139, 124, 255, .45);
+    color: white;
+  }
+  .meta {
+    grid-column: 3; grid-row: 2;
+    min-width: 0; min-height: 15px;
+    color: var(--faint);
+    font-size: 11px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .primary, .secondary {
+    grid-column: 4;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .primary { grid-row: 1; font-size: 13px; justify-self: end; }
+  .secondary { grid-row: 2; color: var(--faint); font-size: 11px; min-height: 15px; }
+  .split { height: 1px; background: #7a7a7a; margin: 8px 8px; }
+  .foot {
+    border-top: 1px solid var(--line);
+    color: var(--faint);
+    font-size: 12px;
+    text-align: center;
+    padding: 8px 10px 10px;
+  }
+  .side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  section {
+    background: white;
+    border: 1px solid var(--demo-line);
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+  section h2 { margin: 0 0 8px; font-size: 13px; }
+  .kv { display: grid; grid-template-columns: 7.2em 1fr; gap: 4px 8px; font-size: 13px; padding: 2px 0; }
+  .kv span { color: var(--demo-muted); }
+  .kv b { font-weight: 600; overflow-wrap: anywhere; }
+  .kv.dirty b { background: #fff3bf; }
+  .steps, .picks { display: flex; flex-wrap: wrap; gap: 6px; }
+  .steps button, .picks button {
+    border: 1px solid var(--demo-line);
+    background: white;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .steps button.on, .picks button.on { background: var(--demo); color: white; border-color: var(--demo); }
+  .blurb { margin: 0 0 8px; color: var(--demo-muted); font-size: 13px; }
+  .walk-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="mark">PROTOTYPE · 可扔掉</div>
+  <h1>Token 榜窄栏，这一套还扫得动吗</h1>
+  <p>问的是已经定下来的这一套，不是三套布局里挑一套。左边按 Obsidian 侧栏的宽度画。点人或点分享只记在右边，不跳走。换时间只改页脚和分享链接。换口径会重排名，并交换主数字和次数字。页脚的「前 N 名」是榜单窗口；自己从窗口里抽走之后，下面的行数可以比 N 少。</p>
+</header>
+<main>
+  <div id="pane" class="pane"></div>
+  <div class="side">
+    <section>
+      <h2>现在的状态</h2>
+      <div id="state"></div>
+    </section>
+    <section>
+      <h2>随便点</h2>
+      <p class="blurb">情况和栏宽。榜里的下拉、分享、刷新、设置也都能点。</p>
+      <div class="picks" id="situations"></div>
+      <div class="picks" id="widths" style="margin-top:8px"></div>
+    </section>
+    <section>
+      <h2>走查</h2>
+      <div class="walk-tabs" id="walk-tabs"></div>
+      <p class="blurb" id="walk-blurb"></p>
+      <div class="steps" id="walk-steps"></div>
+    </section>
+  </div>
+</main>
+<script id="token-rank-logic">
+var TokenRank = (function () {
+  var RANGES = [
+    { key: 'today', label: '今天' },
+    { key: 'yesterday', label: '昨天' },
+    { key: 'day-before', label: '前天' },
+    { key: '3d', label: '近 3 天' },
+    { key: '7d', label: '近 7 天' },
+    { key: '30d', label: '近 30 天' },
+    { key: '60d', label: '近 60 天' },
+    { key: '90d', label: '近 90 天' },
+    { key: '365d', label: '近一年' }
+  ];
+  var METRICS = [
+    { key: 'total', label: '含缓存' },
+    { key: 'norm', label: '不含缓存' },
+    { key: 'cost', label: '预估费用' }
+  ];
+  var LIMITS = [10, 20, 50];
+  var USERS = { today: 695, yesterday: 640, 'day-before': 610, '3d': 980, '7d': 1842, '30d': 4200, '60d': 6100, '90d': 8000, '365d': 12000 };
+  var GUEST = '未登录官网 Token 榜，这里只显示公开排名，看不到我的名次。';
+  var HOME = 'https://scys.com/tokenrank/';
+  var SHARE_DENY = 'Token 榜未识别当前账户，不能分享我的排名。';
+
+  function keyOf(list, value, fallback) {
+    for (var i = 0; i < list.length; i++) if (list[i].key === value) return value;
+    return fallback;
+  }
+  function rangeKey(value) { return keyOf(RANGES, value, 'today'); }
+  function metricKey(value) { return keyOf(METRICS, value, 'total'); }
+  function limitKey(value) {
+    var n = Number(value);
+    return LIMITS.indexOf(n) >= 0 ? n : 50;
+  }
+  function labelOf(list, key) {
+    for (var i = 0; i < list.length; i++) if (list[i].key === key) return list[i].label;
+    return list[0].label;
+  }
+  function formatTokens(value) {
+    var n = Number(value) || 0;
+    if (n >= 1e8) return (n / 1e8).toFixed(2) + ' 亿';
+    if (n >= 1e4) return (n / 1e4).toFixed(1) + ' 万';
+    return n.toLocaleString('zh-CN');
+  }
+  function formatCost(value) {
+    if (value == null || value === '') return '';
+    var n = Number(value);
+    if (!isFinite(n)) return '';
+    if (n >= 100) return '$' + Math.round(n).toLocaleString('en-US');
+    return '$' + n.toFixed(2);
+  }
+  function rankFigures(row, metric) {
+    var score = Number(row && row.score);
+    var norm = Number(row && row.norm);
+    var tokens = metric === 'norm' && isFinite(norm) ? norm : (isFinite(score) ? score : 0);
+    if (metric === 'cost') {
+      return { tokens: tokens, primaryText: formatCost(row && row.cost) || '$0.00', costText: formatTokens(tokens) + ' Token' };
+    }
+    return { tokens: tokens, primaryText: '', costText: formatCost(row && row.cost) };
+  }
+  function tokenTopLabel(range, count, users) {
+    var label = labelOf(RANGES, range) + ' · 前 ' + count + ' 名';
+    if (!isFinite(users)) return label;
+    return label + ' · 全站 ' + Number(users).toLocaleString('en-US') + ' 人参与';
+  }
+  function avatarOf(person) {
+    if (!person || !person.avatar) return null;
+    var id = String(person.userId || person.name || '');
+    var h = 0;
+    for (var i = 0; i < id.length; i++) h = (h * 33 + id.charCodeAt(i)) % 360;
+    return { letter: String(person.name || '?').slice(0, 1), hue: h };
+  }
+  function sortBy(people, metric) {
+    var key = metric === 'norm' ? 'norm' : metric === 'cost' ? 'cost' : 'score';
+    return people.slice().sort(function (a, b) {
+      var d = Number(b[key]) - Number(a[key]);
+      if (d) return d;
+      return String(a.userId).localeCompare(String(b.userId));
+    });
+  }
+  function toRow(person, metric, isMe, range) {
+    var figures = rankFigures(person, metric);
+    var rankNum = Number(person.rank);
+    var userId = person.userId || 'me';
+    var url = 'https://scys.com/tokenrank/u/' + userId;
+    if (isMe) url += '?range=' + encodeURIComponent(range);
+    return {
+      userId: userId,
+      rankText: person.rank == null || person.rank === '' ? '—' : String(person.rank),
+      top3: isFinite(rankNum) && rankNum >= 1 && rankNum <= 3,
+      name: person.name || '匿名用户',
+      me: !!isMe,
+      avatar: avatarOf(person),
+      tool: person.tool || '',
+      model: person.model || '',
+      meta: [person.tool, person.model].filter(Boolean).join(' · '),
+      primary: figures.primaryText || (formatTokens(figures.tokens) + ' Token'),
+      secondary: figures.costText || '',
+      url: url
+    };
+  }
+  function buildView(scenario, query) {
+    var range = rangeKey(query && query.range);
+    var metric = metricKey(query && query.metric);
+    var limit = limitKey(query && query.limit);
+    var people = (scenario && scenario.people) || [];
+    var me = scenario && scenario.me;
+    var identified = !!(scenario && scenario.identified && me);
+    var pool = people;
+    if (identified && scenario.meInBoard) pool = people.concat([me]);
+    var ranked = sortBy(pool, metric).map(function (p, i) {
+      var copy = {};
+      for (var k in p) copy[k] = p[k];
+      copy.rank = i + 1;
+      return copy;
+    });
+    var windowRows = ranked.slice(0, limit);
+    var meId = me && me.userId;
+    var list = windowRows.filter(function (p) { return !(identified && p.userId === meId); });
+    var self = null;
+    if (identified) {
+      var found = null;
+      for (var i = 0; i < ranked.length; i++) if (ranked[i].userId === meId) found = ranked[i];
+      var source = found || me;
+      var rank = found ? found.rank : (me.ranks ? me.ranks[metric] : '—');
+      var pinned = {};
+      for (var k2 in source) pinned[k2] = source[k2];
+      pinned.rank = rank;
+      self = toRow(pinned, metric, true, range);
+    }
+    var users = USERS[range];
+    return {
+      identified: identified,
+      range: range,
+      rangeLabel: labelOf(RANGES, range),
+      metric: metric,
+      metricLabel: labelOf(METRICS, metric),
+      limit: limit,
+      primaryKind: metric === 'cost' ? '美元' : 'Token',
+      self: self,
+      rows: list.map(function (p) { return toRow(p, metric, false, range); }),
+      windowSize: windowRows.length,
+      footer: tokenTopLabel(range, windowRows.length, users),
+      guestNote: identified ? '' : GUEST,
+      guestNoteUrl: identified ? '' : HOME,
+      users: users
+    };
+  }
+  function shareResult(view) {
+    if (!view || !view.identified || !view.self) {
+      return { ok: false, notice: SHARE_DENY, url: '', label: '' };
+    }
+    return { ok: true, notice: '', url: view.self.url, label: '我的 Token 页' };
+  }
+
+  var TOOLS = ['codex', 'claude-code', 'antigravity', 'cursor', 'dsh'];
+  var MODELS = ['gpt-6-luna', 'claude-sonnet-5-5', 'claude-opus-5-5', 'gemini-3.8-flash', 'deepseek-flash', 'space-bunny'];
+  var MORE = ['海子','何锦成','戴怡宁','邓晨','肖','阿凯','林深','周野','苏晚','陈麦','北岛','南风','江流','白露','青桐','石页','木子','小山','老纪','阿宁','方糖','海盐','星河','晚舟','清和','予安','知夏','听澜','疏影','横舟','半山','归晚','拾光','南烛','青柠','未名','既见','长歌','小山竹','阿禾','川宁','麦子','岛主','林间','月白'];
+
+  function crowd() {
+    var out = [];
+    for (var i = 0; i < MORE.length; i++) {
+      var score = (160 - i * 3.15) * 1e8;
+      out.push({
+        userId: 'p' + i,
+        name: MORE[i],
+        tool: i === 8 ? '' : TOOLS[i % TOOLS.length],
+        model: i === 11 ? '' : MODELS[i % MODELS.length],
+        score: score,
+        norm: score * (0.82 + (i % 4) * 0.04),
+        cost: 120 + (i * 97) % 3900,
+        avatar: i % 7 !== 0
+      });
+    }
+    return out;
+  }
+  function basePeople() {
+    var head = [
+      { userId: 'bob', name: 'Bob', tool: 'codex', model: 'gpt-6-luna', score: 342.30 * 1e8, norm: 30 * 1e8, cost: 4813, avatar: true },
+      { userId: 'mowen', name: '墨文', tool: 'claude-code', model: 'claude-sonnet-5-5', score: 250.33 * 1e8, norm: 248 * 1e8, cost: 9972, avatar: true },
+      { userId: 'wubide', name: '吴必得', tool: 'claude-code', model: 'claude-opus-5-5', score: 250.31 * 1e8, norm: 160 * 1e8, cost: 20362, avatar: true },
+      { userId: 'cai', name: '蔡靖华', tool: 'antigravity', model: 'gemini-3.8-flash', score: 231.13 * 1e8, norm: 229 * 1e8, cost: 5772, avatar: true },
+      { userId: 'san', name: '三千五', tool: 'claude-code', model: 'claude-opus-5-5', score: 178.16 * 1e8, norm: 150 * 1e8, cost: 5748, avatar: true }
+    ];
+    return head.concat(crowd());
+  }
+  function meOutside() {
+    return {
+      userId: 'me', name: '我', tool: 'codex', model: '',
+      score: 72.79 * 1e8, norm: 51 * 1e8, cost: 1680, avatar: false,
+      ranks: { total: 76, norm: 91, cost: 40 }
+    };
+  }
+  function scenarios() {
+    var people = basePeople();
+    var longPeople = basePeople();
+    longPeople[3] = {
+      userId: 'cai', name: '蔡靖华的航海实验账号名称特别长用来看省略', tool: 'antigravity', model: 'gemini-3.8-flash',
+      score: longPeople[3].score, norm: longPeople[3].norm, cost: longPeople[3].cost, avatar: false
+    };
+    longPeople[6] = {
+      userId: longPeople[6].userId, name: longPeople[6].name, tool: 'claude-code',
+      model: 'claude-opus-5-5-extended-thinking-preview',
+      score: longPeople[6].score, norm: longPeople[6].norm, cost: longPeople[6].cost, avatar: true
+    };
+    longPeople[8] = {
+      userId: longPeople[8].userId, name: longPeople[8].name, tool: '', model: '',
+      score: longPeople[8].score, norm: longPeople[8].norm, cost: longPeople[8].cost, avatar: false
+    };
+    return {
+      'rank-76': { title: '我在第 76', identified: true, meInBoard: false, me: meOutside(), people: people },
+      'top-3': {
+        title: '我在前三', identified: true, meInBoard: true, people: people,
+        me: { userId: 'me', name: '小鱼', tool: 'codex', model: 'gpt-6-luna', score: 300 * 1e8, norm: 5 * 1e8, cost: 9000, avatar: true }
+      },
+      'rank-1': {
+        title: '我是第 1', identified: true, meInBoard: true, people: people,
+        me: { userId: 'me', name: 'Marcus', tool: 'codex', model: 'gpt-6-luna', score: 500 * 1e8, norm: 400 * 1e8, cost: 40000, avatar: true }
+      },
+      anon: { title: '未登录', identified: false, meInBoard: false, me: null, people: people },
+      long: {
+        title: '名字很长', identified: true, meInBoard: false, people: longPeople,
+        me: {
+          userId: 'me', name: '亦仁写给航海伙伴的超长昵称用于省略测试', tool: 'claude-code', model: '',
+          score: 72.79 * 1e8, norm: 54 * 1e8, cost: 1680, avatar: false,
+          ranks: { total: 76, norm: 91, cost: 40 }
+        }
+      }
+    };
+  }
+
+  return {
+    RANGES: RANGES,
+    METRICS: METRICS,
+    LIMITS: LIMITS,
+    GUEST: GUEST,
+    HOME: HOME,
+    buildView: buildView,
+    shareResult: shareResult,
+    scenarios: scenarios,
+    initialQuery: function () { return { range: 'today', metric: 'total', limit: 50 }; }
+  };
+})();
+</script>
+<script>
+(function () {
+  var SITUATIONS = ['rank-76', 'top-3', 'rank-1', 'anon', 'long'];
+  var WIDTHS = [360, 440, 640];
+  var WALKS = [
+    {
+      id: 'rank-76', title: '我在第 76',
+      blurb: '名字就叫「我」。看旁边的标签，以及第 76 名和第 1 名之间的分隔。',
+      steps: [
+        { label: '打开这一情况', apply: function (s) { s.scenarioId = 'rank-76'; } },
+        { label: '只看前 10', apply: function (s) { s.query.limit = 10; } },
+        { label: '回到前 50', apply: function (s) { s.query.limit = 50; } }
+      ]
+    },
+    {
+      id: 'top-3', title: '我在前三',
+      blurb: '含缓存时自己是第 2，下面不能再出现一次。不含缓存时名次会掉出去。费用口径下右边主数字变成美元。',
+      steps: [
+        { label: '打开，并只看前 10', apply: function (s) { s.scenarioId = 'top-3'; s.query.limit = 10; } },
+        { label: '改成不含缓存', apply: function (s) { s.query.metric = 'norm'; } },
+        { label: '改成预估费用', apply: function (s) { s.query.metric = 'cost'; } }
+      ]
+    },
+    {
+      id: 'rank-1', title: '我是第 1',
+      blurb: '自己仍只钉在最上面。分隔线下面从第 2 名开始，名次数字加粗。',
+      steps: [
+        { label: '打开这一情况', apply: function (s) { s.scenarioId = 'rank-1'; } }
+      ]
+    },
+    {
+      id: 'anon', title: '未登录',
+      blurb: '没有自己那一行。再点说明和分享。',
+      steps: [
+        { label: '打开这一情况', apply: function (s) { s.scenarioId = 'anon'; } },
+        { label: '点未登录说明', apply: function (s) { s.opened = { label: '官网 Token 榜', url: TokenRank.HOME }; s.notice = ''; } },
+        { label: '点分享', apply: function (s) { var r = TokenRank.shareResult(viewOf(s)); s.notice = r.notice; s.opened = { label: r.label, url: r.url }; } }
+      ]
+    },
+    {
+      id: 'long', title: '名字很长',
+      blurb: '长名字省略，标签还在。缺头像留空位。缺工具和模型时，第二行左边是空的。拉宽只把同一行拉开。',
+      steps: [
+        { label: '打开这一情况', apply: function (s) { s.scenarioId = 'long'; } },
+        { label: '栏宽拉到 640', apply: function (s) { s.width = 640; } },
+        { label: '栏宽收到 360', apply: function (s) { s.width = 360; } }
+      ]
+    }
+  ];
+
+  var state = {
+    scenarioId: 'rank-76',
+    query: TokenRank.initialQuery(),
+    width: 440,
+    opened: { label: '', url: '' },
+    notice: '',
+    changed: '打开默认情况',
+    walkId: '',
+    step: -1
+  };
+  var prev = {};
+
+  function scenarios() { return TokenRank.scenarios(); }
+  function viewOf(s) { return TokenRank.buildView(scenarios()[s.scenarioId], s.query); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function svg(path) {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>';
+  }
+  var ICONS = {
+    hot: svg('<path d="M12 3c1 4-2 5-2 9a4 4 0 1 0 8 0c0-3-2-5-1-9-3 2-5 2-5 0z"/>'),
+    digest: svg('<path d="M12 3l3 6 6 .5-4.5 4 1.5 6L12 16l-6 3.5 1.5-6L3 9.5 9 9z"/>'),
+    sail: svg('<path d="M4 20h16M6 20V10l8-4v14"/>'),
+    party: svg('<path d="M12 21s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11z"/><circle cx="12" cy="10" r="2"/>'),
+    proj: svg('<circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/>'),
+    token: svg('<path d="M4 19V5M4 19h16"/><path d="M8 15v-3M12 15V8M16 15v-5"/>'),
+    board: svg('<path d="M8 21h8M12 17v4M7 4h10v6a5 5 0 0 1-10 0z"/>'),
+    refresh: svg('<path d="M20 12a8 8 0 1 1-2.2-5.5"/><path d="M20 4v6h-6"/>'),
+    gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>')
+  };
+  var TABS = [
+    ['hot', '热门'], ['digest', '精华'], ['sail', '航海'], ['party', '聚会'],
+    ['proj', '项目'], ['token', 'Token 榜'], ['board', '榜单']
+  ];
+
+  function options(list, current, text) {
+    return list.map(function (item) {
+      var value = item.key != null ? item.key : item;
+      var label = text ? text(item) : item.label;
+      return '<option value="' + esc(value) + '"' + (String(value) === String(current) ? ' selected' : '') + '>' + esc(label) + '</option>';
+    }).join('');
+  }
+  function rowHtml(row) {
+    var av = row.avatar
+      ? '<span class="avatar" style="--h:' + row.avatar.hue + '">' + esc(row.avatar.letter) + '</span>'
+      : '<span class="avatar empty"></span>';
+    var tag = row.me ? '<span class="tag">我</span>' : '';
+    return '<button type="button" class="row' + (row.me ? ' me' : '') + '" data-act="open" data-url="' + esc(row.url) + '" data-label="' + esc(row.name + ' 的 Token 页') + '">' +
+      '<span class="rank' + (row.top3 ? ' top' : '') + '">' + esc(row.rankText) + '</span>' +
+      av +
+      '<span class="who"><span class="n" title="' + esc(row.name) + '">' + esc(row.name) + '</span>' + tag + '</span>' +
+      '<span class="meta">' + esc(row.meta) + '</span>' +
+      '<span class="primary">' + esc(row.primary) + '</span>' +
+      '<span class="secondary">' + esc(row.secondary) + '</span>' +
+      '</button>';
+  }
+  function renderPane(view) {
+    var tabs = TABS.map(function (t) {
+      return '<button type="button" class="tab' + (t[0] === 'token' ? ' on' : '') + '" data-act="tab" data-tab="' + t[0] + '">' + ICONS[t[0]] + esc(t[1]) + '</button>';
+    }).join('');
+    var guest = view.guestNote
+      ? '<button type="button" class="guest" data-act="guest">' + esc(view.guestNote) + '</button>'
+      : '';
+    var self = view.self ? rowHtml(view.self) + (view.rows.length ? '<div class="split"></div>' : '') : '';
+    document.getElementById('pane').style.width = state.width + 'px';
+    document.getElementById('pane').innerHTML =
+      '<div class="search"><input disabled value="搜索生财正文… 回车即用 MCP 检索"><button type="button" class="ghost" disabled>搜索</button><button type="button" class="ghost" disabled>问亦仁</button></div>' +
+      '<div class="tabs">' + tabs + '</div>' +
+      '<div class="tools">' +
+        '<select data-field="range" aria-label="时间">' + options(TokenRank.RANGES, view.range) + '</select>' +
+        '<select data-field="metric" aria-label="口径">' + options(TokenRank.METRICS, view.metric) + '</select>' +
+        '<span class="spacer"></span>' +
+        '<button type="button" class="textbtn" data-act="share">分享 Token</button>' +
+        '<select data-field="limit" aria-label="条数">' + options(TokenRank.LIMITS, view.limit, function (n) { return '前 ' + n; }) + '</select>' +
+        '<button type="button" class="iconbtn" data-act="refresh" aria-label="刷新" title="刷新">' + ICONS.refresh + '</button>' +
+        '<button type="button" class="iconbtn" data-act="gear" aria-label="设置" title="设置">' + ICONS.gear + '</button>' +
+      '</div>' +
+      guest +
+      '<div class="list">' + self + view.rows.map(rowHtml).join('') + '</div>' +
+      '<div class="foot">' + esc(view.footer) + '</div>';
+  }
+  function field(name, value) {
+    var dirty = prev[name] !== undefined && prev[name] !== value;
+    prev[name] = value;
+    return '<div class="kv' + (dirty ? ' dirty' : '') + '"><span>' + esc(name) + '</span><b>' + esc(value) + '</b></div>';
+  }
+  function renderState(view) {
+    var bits = [
+      field('情况', scenarios()[state.scenarioId].title),
+      field('身份', view.identified ? '已登录' : '未登录'),
+      field('时间', view.rangeLabel),
+      field('口径', view.metricLabel),
+      field('条数', '前 ' + view.limit),
+      field('我的名次', view.self ? view.self.rankText : '不显示'),
+      field('我的名字', view.self ? view.self.name : '不显示'),
+      field('钉在上面', view.self ? '是' : '否'),
+      field('窗口', '前 ' + view.windowSize + ' 名'),
+      field('名单行数', String(view.rows.length)),
+      field('页脚', view.footer),
+      field('主数字', view.primaryKind),
+      field('兴趣过滤', '不作用在榜上'),
+      field('疏密切换', '这一屏没有'),
+      field('刚打开', state.opened.url ? (state.opened.label + '  ' + state.opened.url) : '没有'),
+      field('提示', state.notice || '没有'),
+      field('这一下', state.changed || '')
+    ];
+    document.getElementById('state').innerHTML = bits.join('');
+  }
+  function renderFree() {
+    document.getElementById('situations').innerHTML = SITUATIONS.map(function (id) {
+      var on = state.scenarioId === id && !state.walkId;
+      return '<button type="button" data-act="situation" data-id="' + id + '"' + (on ? ' class="on"' : '') + '>' + esc(scenarios()[id].title) + '</button>';
+    }).join('');
+    document.getElementById('widths').innerHTML = WIDTHS.map(function (w) {
+      return '<button type="button" data-act="width" data-w="' + w + '"' + (state.width === w ? ' class="on"' : '') + '>栏宽 ' + w + '</button>';
+    }).join('');
+  }
+  function renderWalk() {
+    document.getElementById('walk-tabs').innerHTML = WALKS.map(function (w) {
+      return '<button type="button" data-act="walktab" data-id="' + w.id + '"' + (state.walkId === w.id ? ' class="on"' : '') + '>' + esc(w.title) + '</button>';
+    }).join('');
+    var walk = null;
+    for (var i = 0; i < WALKS.length; i++) if (WALKS[i].id === state.walkId) walk = WALKS[i];
+    if (!walk) {
+      document.getElementById('walk-blurb').textContent = '先点一个走查名称，再按 1、2、3。每一步都会从头重放。';
+      document.getElementById('walk-steps').innerHTML = '';
+      return;
+    }
+    document.getElementById('walk-blurb').textContent = walk.blurb;
+    document.getElementById('walk-steps').innerHTML = walk.steps.map(function (step, index) {
+      return '<button type="button" data-act="step" data-walk="' + walk.id + '" data-step="' + index + '"' + (state.walkId === walk.id && state.step === index ? ' class="on"' : '') + '>' + (index + 1) + '. ' + esc(step.label) + '</button>';
+    }).join('');
+  }
+  function render() {
+    var view = viewOf(state);
+    renderPane(view);
+    renderState(view);
+    renderFree();
+    renderWalk();
+  }
+  function blankOutcome() {
+    state.opened = { label: '', url: '' };
+    state.notice = '';
+  }
+  function loadSituation(id) {
+    state.scenarioId = id;
+    state.query = TokenRank.initialQuery();
+    state.width = 440;
+    state.walkId = '';
+    state.step = -1;
+    blankOutcome();
+    state.changed = '换成「' + scenarios()[id].title + '」';
+    render();
+  }
+  function play(walkId, stepIndex) {
+    var walk = null;
+    for (var i = 0; i < WALKS.length; i++) if (WALKS[i].id === walkId) walk = WALKS[i];
+    state.scenarioId = 'rank-76';
+    state.query = TokenRank.initialQuery();
+    state.width = 440;
+    blankOutcome();
+    var draft = state;
+    for (var s = 0; s <= stepIndex; s++) walk.steps[s].apply(draft);
+    state.walkId = walkId;
+    state.step = stepIndex;
+    state.changed = walk.title + ' · ' + walk.steps[stepIndex].label;
+    render();
+  }
+
+  document.body.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-act]');
+    if (!el) return;
+    var act = el.dataset.act;
+    if (act === 'situation') return loadSituation(el.dataset.id);
+    if (act === 'width') {
+      state.width = Number(el.dataset.w);
+      state.changed = '栏宽 ' + state.width;
+      return render();
+    }
+    if (act === 'walktab') {
+      state.walkId = el.dataset.id;
+      state.step = -1;
+      state.changed = '看走查「' + el.textContent + '」';
+      return render();
+    }
+    if (act === 'step') return play(el.dataset.walk, Number(el.dataset.step));
+    if (act === 'tab') {
+      state.changed = el.dataset.tab === 'token' ? '已经在 Token 榜' : '其他分区这次不动';
+      return render();
+    }
+    if (act === 'share') {
+      var result = TokenRank.shareResult(viewOf(state));
+      state.notice = result.notice;
+      state.opened = { label: result.label, url: result.url };
+      state.changed = result.ok ? '记下分享链接' : '分享被拒绝';
+      return render();
+    }
+    if (act === 'open') {
+      state.opened = { label: el.dataset.label, url: el.dataset.url };
+      state.notice = '';
+      state.changed = '记下要打开的个人页';
+      return render();
+    }
+    if (act === 'guest') {
+      state.opened = { label: '官网 Token 榜', url: TokenRank.HOME };
+      state.notice = '';
+      state.changed = '记下官网 Token 榜';
+      return render();
+    }
+    if (act === 'refresh') {
+      blankOutcome();
+      state.changed = '已刷新。页脚不写更新时间';
+      return render();
+    }
+    if (act === 'gear') {
+      state.changed = '设置不在这次原型里';
+      return render();
+    }
+  });
+  document.body.addEventListener('change', function (e) {
+    var fieldName = e.target.dataset.field;
+    if (!fieldName) return;
+    state.query[fieldName] = fieldName === 'limit' ? Number(e.target.value) : e.target.value;
+    var names = { range: '时间', metric: '口径', limit: '条数' };
+    state.changed = '改了' + names[fieldName];
+    render();
+  });
+
+  var boot = (location.hash || '').replace('#', '');
+  if (scenarios()[boot]) {
+    state.scenarioId = boot;
+    state.changed = '打开「' + scenarios()[boot].title + '」';
+  }
+  var widthBoot = Number(new URLSearchParams(location.search).get('width'));
+  if (WIDTHS.indexOf(widthBoot) >= 0) state.width = widthBoot;
+  render();
+})();
+</script>
+</body>
+</html>

@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS = {
 	partyDistrict: '',
 	partyOnlyFuture: true,
 	tokenRankEndpoint: 'https://scys.com/tokenrank/api/subapp/leaderboard',
+	tokenRankRange: 'today',
+	tokenRankMetric: 'total',
 };
 
 const { Plugin, Notice, ItemView, WorkspaceLeaf, Modal, Setting, PluginSettingTab, TFile, Platform, setIcon } = require('obsidian');
@@ -220,6 +222,34 @@ function finiteNum(n) {
 
 const TOKEN_RANK_HOME = 'https://scys.com/tokenrank/';
 const TOKEN_GUEST_NOTE = '未登录官网 Token 榜，这里只显示公开排名，看不到我的名次。';
+const TOKEN_RANGES = [
+	{ key: 'today', label: '今天' },
+	{ key: 'yesterday', label: '昨天' },
+	{ key: 'day-before', label: '前天' },
+	{ key: '3d', label: '近 3 天' },
+	{ key: '7d', label: '近 7 天' },
+	{ key: '30d', label: '近 30 天' },
+	{ key: '60d', label: '近 60 天' },
+	{ key: '90d', label: '近 90 天' },
+	{ key: '365d', label: '近一年' },
+];
+const TOKEN_METRICS = [
+	{ key: 'total', label: '含缓存' },
+	{ key: 'norm', label: '不含缓存' },
+	{ key: 'cost', label: '预估费用' },
+];
+
+function tokenRangeKey(value) {
+	return TOKEN_RANGES.some((r) => r.key === value) ? value : 'today';
+}
+
+function tokenMetricKey(value) {
+	return TOKEN_METRICS.some((r) => r.key === value) ? value : 'total';
+}
+
+function tokenRangeLabel(value) {
+	return TOKEN_RANGES.find((r) => r.key === tokenRangeKey(value)).label;
+}
 
 function normalizeFeed(result) {
 	if (Array.isArray(result)) {
@@ -237,7 +267,6 @@ function normalizeFeed(result) {
 		aborted: !!(result && result.aborted),
 		guestNote: (result && result.guestNote) || '',
 		guestNoteUrl: (result && result.guestNoteUrl) || '',
-		todayOverview: (result && result.todayOverview) || null,
 	};
 }
 
@@ -300,45 +329,36 @@ function meAvatar(mine) {
 	return httpUrl((me && (me.avatar || me.xq_avatar)) || (mine && (mine.avatar || mine.xq_avatar)));
 }
 
-function syncAgeText(sync) {
-	if (!sync || sync.status !== 0 || sync.state !== 'success') return '';
-	const ms = Date.parse(sync.lastReceived || '');
-	if (!Number.isFinite(ms)) return '';
-	const min = Math.floor((Date.now() - ms) / 60000);
-	if (!Number.isFinite(min) || min < 1) return '刚刚';
-	if (min < 60) return min + ' 分钟前';
-	const hr = Math.floor(min / 60);
-	if (hr < 24) return hr + ' 小时前';
-	const day = Math.floor(hr / 24);
-	return day + ' 天前';
-}
-
-function todayOverviewFrom(today, sync) {
-	if (!today || today.status !== 0 || !today.myRank || typeof today.myRank !== 'object') return null;
-	const row = today.myRank;
-	const rankNum = Number(row.rank);
-	const hasRank = Number.isFinite(rankNum) && rankNum > 0;
-	const score = Number(row.score);
-	const hasScore = Number.isFinite(score);
-	if (!hasRank && !hasScore) return null;
-	const users = today.stats && Number(today.stats.users);
+function rankFigures(row, metric) {
+	const score = Number(row && row.score);
+	const norm = Number(row && row.norm);
+	const tokens = metric === 'norm' && Number.isFinite(norm) ? norm : (Number.isFinite(score) ? score : 0);
+	if (metric === 'cost') {
+		return {
+			tokens,
+			primaryText: formatCost(row && row.cost) || '$0.00',
+			costText: formatTokens(tokens) + ' Token',
+		};
+	}
 	return {
-		tokens: hasScore ? score : 0,
-		costText: formatCost(row.cost),
-		rank: hasRank ? String(rankNum) : '',
-		users: Number.isFinite(users) ? users : null,
-		syncText: syncAgeText(sync),
+		tokens,
+		primaryText: '',
+		costText: formatCost(row && row.cost),
 	};
 }
 
-function mapTokenRankEntry(x) {
+function mapTokenRankEntry(x, metric) {
 	const tool = primaryToolName(x && x.byTool);
 	const model = (x && x.primaryModel) || '';
+	const figures = rankFigures(x, metric);
 	return {
 		kind: 'rank',
 		rank: x.rank,
-		tokens: x.score,
-		costText: formatCost(x && x.cost),
+		tokens: figures.tokens,
+		norm: Number(x && x.norm),
+		cost: x && x.cost,
+		primaryText: figures.primaryText,
+		costText: figures.costText,
 		tool,
 		model,
 		avatar: httpUrl(x && x.avatar),
@@ -376,15 +396,22 @@ async function readScysCookieHeader() {
 	}
 }
 
-function buildTokenRank(mine, r, today, sync) {
+function tokenTopLabel(range, count, stats) {
+	const users = stats && Number(stats.users);
+	const label = tokenRangeLabel(range) + ' · 前 ' + count + ' 名';
+	if (!Number.isFinite(users)) return label;
+	return label + ' · 全站 ' + users.toLocaleString('en-US') + ' 人参与';
+}
+
+function buildTokenRank(mine, r, range, metric) {
 	if (!r || r.status !== 0) throw new Error((r && r.message) || 'Token 榜单暂时不可用');
 	const identified = !!(mine && mine.status === 0);
 	const me = identified ? (mine.user || mine.profile || mine) : null;
 	const userId = me && (me.userId || me.id || mine.userId);
-	const mapped = (r.entries || []).map(mapTokenRankEntry);
+	const mapped = (r.entries || []).map((x) => mapTokenRankEntry(x, metric));
 	const own = userId ? mapped.find((x) => sameUserId(x.userId, userId)) : null;
 	const entries = mapped.filter((x) => !sameUserId(x.userId, userId));
-	const topLabel = '近 7 天 · 前 ' + entries.length + ' 名';
+	const topLabel = tokenTopLabel(range, mapped.length, r.stats);
 	if (!identified) {
 		return {
 			profile: null,
@@ -398,25 +425,31 @@ function buildTokenRank(mine, r, today, sync) {
 				topLabel,
 				guestNote: TOKEN_GUEST_NOTE,
 				guestNoteUrl: TOKEN_RANK_HOME,
-				todayOverview: null,
 			},
 		};
 	}
 	const myRank = r.myRank || mine.rank || {};
 	const tool = (own && own.tool) || primaryToolFromList(mine.tools || (mine.kpi && mine.kpi.tools));
 	const model = (own && own.model) || '';
+	const figures = rankFigures({
+		score: myRank.score != null ? myRank.score : ((mine.kpi && mine.kpi.total) || mine.total || 0),
+		norm: myRank.norm != null ? myRank.norm : (own && own.norm),
+		cost: myRank.cost != null ? myRank.cost : ((own && own.cost != null) ? own.cost : (mine.kpi && mine.kpi.cost)),
+	}, metric);
 	const myItem = {
 		kind: 'rank',
 		rank: myRank.rank || '—',
-		tokens: myRank.score || (mine.kpi && mine.kpi.total) || mine.total || 0,
-		costText: formatCost(myRank.cost) || (own && own.costText) || formatCost(mine.kpi && mine.kpi.cost),
+		tokens: figures.tokens,
+		primaryText: figures.primaryText,
+		costText: figures.costText,
 		tool,
 		model,
 		avatar: (own && own.avatar) || meAvatar(mine),
-		title: (me.name || mine.name || '我') + '（我）',
+		title: me.name || mine.name || '我',
+		me: true,
 		summary: rankMeta(tool, model),
 		author: '',
-		url: userId ? 'https://scys.com/tokenrank/u/' + userId + '?range=7d' : TOKEN_RANK_HOME,
+		url: userId ? 'https://scys.com/tokenrank/u/' + userId + '?range=' + encodeURIComponent(range) : TOKEN_RANK_HOME,
 	};
 	return {
 		profile: { shareUrl: myItem.url, userId },
@@ -430,7 +463,6 @@ function buildTokenRank(mine, r, today, sync) {
 			topLabel,
 			guestNote: '',
 			guestNoteUrl: '',
-			todayOverview: todayOverviewFrom(today, sync),
 		},
 	};
 }
@@ -871,6 +903,7 @@ class ScysRadarView extends ItemView {
 		const root = this.contentEl;
 		root.empty();
 		root.addClass('scys-root');
+		root.addClass('scys-mx');
 		const auth = this.plugin.oauth;
 		if (!auth.hasAuth) {
 			this.renderAuth(root);
@@ -948,10 +981,23 @@ class ScysRadarView extends ItemView {
 		this.renderSubBar();
 
 		const row2 = root.createDiv({ cls: 'scys-toolbar scys-toolbar-2' });
+		this.rangeSelect = row2.createEl('select', { cls: 'scys-select', attr: { title: 'Token 榜时间范围', 'aria-label': 'Token 榜时间范围' } });
+		for (const opt of TOKEN_RANGES) {
+			const el = this.rangeSelect.createEl('option', { text: opt.label });
+			el.value = opt.key;
+		}
+		this.rangeSelect.value = tokenRangeKey(this.plugin.settings.tokenRankRange);
+		this.rangeSelect.onchange = () => this.setTokenRankQuery({ range: this.rangeSelect.value });
+		this.metricSelect = row2.createEl('select', { cls: 'scys-select', attr: { title: 'Token 榜统计口径', 'aria-label': 'Token 榜统计口径' } });
+		for (const opt of TOKEN_METRICS) {
+			const el = this.metricSelect.createEl('option', { text: opt.label });
+			el.value = opt.key;
+		}
+		this.metricSelect.value = tokenMetricKey(this.plugin.settings.tokenRankMetric);
+		this.metricSelect.onchange = () => this.setTokenRankQuery({ metric: this.metricSelect.value });
 		row2.createDiv({ cls: 'scys-spacer' });
 		this.shareBtn = row2.createEl('button', { text: '分享 Token', cls: 'scys-mini-btn' });
 		this.shareBtn.onclick = () => this.plugin.shareMyToken();
-		this.syncShareBtn();
 
 		const size = normalizePageSize(this.plugin.settings.pageSize);
 		this.sizeSelect = row2.createEl('select', { cls: 'scys-select', attr: { title: '每页条数', 'aria-label': '每页条数' } });
@@ -974,12 +1020,12 @@ class ScysRadarView extends ItemView {
 		this.modeSelect.value = mode;
 		this.modeSelect.onchange = () => this.setListMode(this.modeSelect.value);
 
-		const onlyBtn = row2.createEl('button', { cls: 'scys-mini-btn scys-icon-btn', attr: { title: '只看感兴趣，只过滤当前这一页', 'aria-label': '只看感兴趣' } });
-		mountIcon(onlyBtn, 'target');
-		if (this.onlyInterest) onlyBtn.addClass('is-on');
-		onlyBtn.onclick = () => {
+		this.onlyBtn = row2.createEl('button', { cls: 'scys-mini-btn scys-icon-btn', attr: { title: '只看感兴趣，只过滤当前这一页', 'aria-label': '只看感兴趣' } });
+		mountIcon(this.onlyBtn, 'target');
+		if (this.onlyInterest) this.onlyBtn.addClass('is-on');
+		this.onlyBtn.onclick = () => {
 			this.onlyInterest = !this.onlyInterest;
-			onlyBtn.toggleClass('is-on', this.onlyInterest);
+			this.onlyBtn.toggleClass('is-on', this.onlyInterest);
 			this.renderList();
 		};
 		const refreshBtn = row2.createEl('button', { cls: 'scys-mini-btn scys-icon-btn', attr: { title: '刷新', 'aria-label': '刷新' } });
@@ -991,6 +1037,7 @@ class ScysRadarView extends ItemView {
 		const cfgBtn = row2.createEl('button', { cls: 'scys-mini-btn scys-icon-btn', attr: { title: '设置', 'aria-label': '设置' } });
 		mountIcon(cfgBtn, 'gear');
 		cfgBtn.onclick = () => this.plugin.openSettings();
+		this.syncShareBtn();
 
 		this.listEl = root.createDiv({ cls: 'scys-list' });
 		this.statusEl = root.createDiv({ cls: 'scys-status' });
@@ -1013,7 +1060,28 @@ class ScysRadarView extends ItemView {
 	}
 
 	syncShareBtn() {
-		if (this.shareBtn) this.shareBtn.toggleClass('scys-hidden', this.tab !== 'token');
+		const onToken = this.tab === 'token';
+		if (this.shareBtn) this.shareBtn.toggleClass('scys-hidden', !onToken);
+		if (this.rangeSelect) this.rangeSelect.toggleClass('scys-hidden', !onToken);
+		if (this.metricSelect) this.metricSelect.toggleClass('scys-hidden', !onToken);
+		if (this.modeSelect) this.modeSelect.toggleClass('scys-hidden', onToken);
+		if (this.onlyBtn) this.onlyBtn.toggleClass('scys-hidden', onToken);
+		if (!this.sizeSelect) return;
+		const sizeLabel = onToken ? '榜单人数' : '每页条数';
+		this.sizeSelect.setAttr('title', sizeLabel);
+		this.sizeSelect.setAttr('aria-label', sizeLabel);
+		Array.from(this.sizeSelect.options).forEach((opt) => {
+			opt.text = onToken ? '前 ' + opt.value : opt.value + ' 条';
+		});
+	}
+
+	async setTokenRankQuery(patch) {
+		if (patch && patch.range) this.plugin.settings.tokenRankRange = tokenRangeKey(patch.range);
+		if (patch && patch.metric) this.plugin.settings.tokenRankMetric = tokenMetricKey(patch.metric);
+		await this.plugin.saveSettings();
+		if (this.rangeSelect) this.rangeSelect.value = tokenRangeKey(this.plugin.settings.tokenRankRange);
+		if (this.metricSelect) this.metricSelect.value = tokenMetricKey(this.plugin.settings.tokenRankMetric);
+		if (this.tab === 'token') this.loadTab('token');
 	}
 
 	async setPageSize(n) {
@@ -1135,8 +1203,9 @@ class ScysRadarView extends ItemView {
 		const el = this.listEl;
 		el.empty();
 		const compact = this.plugin.settings.listMode === 'compact';
+		const rankTab = this.tab === 'token';
 		let items = this.items;
-		if (this.onlyInterest) {
+		if (this.onlyInterest && !rankTab) {
 			items = items.filter((it) => this.matchInterests(it.title + ' ' + (it.summary || '')).length > 0);
 		}
 		if (emptyMsg) {
@@ -1145,7 +1214,6 @@ class ScysRadarView extends ItemView {
 			return;
 		}
 		const feedNow = this.feed || {};
-		if (feedNow.todayOverview) this.renderTodayOverview(el, feedNow.todayOverview);
 		if (feedNow.guestNote) {
 			const note = el.createEl('button', {
 				cls: 'scys-guest-note',
@@ -1155,12 +1223,15 @@ class ScysRadarView extends ItemView {
 			note.onclick = () => window.open(feedNow.guestNoteUrl || TOKEN_RANK_HOME, '_blank');
 		}
 		if (!items.length) {
-			const filteredOut = this.onlyInterest && this.items.length > 0;
+			const filteredOut = this.onlyInterest && !rankTab && this.items.length > 0;
 			el.createDiv({ cls: 'scys-empty', text: filteredOut ? '这一页没有感兴趣的帖子，可以翻下一页' : this.emptyText() });
 		}
 		for (const it of items) {
 			if (it.kind === 'rank') {
 				this.renderRankCard(el, it);
+				if (it.me && items.some((other) => other !== it && other.kind === 'rank')) {
+					el.createDiv({ cls: 'scys-rank-split' });
+				}
 				continue;
 			}
 			const card = el.createDiv({ cls: 'scys-card' + (compact ? ' scys-card-compact' : '') });
@@ -1232,46 +1303,38 @@ class ScysRadarView extends ItemView {
 		this.renderStatus();
 	}
 
-	renderTodayOverview(el, today) {
-		const box = el.createDiv({ cls: 'scys-today', attr: { 'aria-label': '今日概况' } });
-		box.createDiv({ cls: 'scys-today-title', text: '今日概况' });
-		const grid = box.createDiv({ cls: 'scys-today-grid' });
-		const cell = (label, value) => {
-			const item = grid.createDiv({ cls: 'scys-today-cell' });
-			item.createDiv({ cls: 'scys-today-label', text: label });
-			item.createDiv({ cls: 'scys-today-value', text: value });
-		};
-		cell('今日消耗', formatTokens(today.tokens));
-		if (today.costText) cell('预估费用', today.costText);
-		cell('今日排名', today.rank ? '#' + today.rank : '—');
-		const bits = [];
-		if (today.users != null) bits.push('今日全站 ' + today.users.toLocaleString('en-US') + ' 人参与');
-		if (today.syncText) bits.push('最近同步 ' + today.syncText);
-		if (bits.length) box.createDiv({ cls: 'scys-today-foot', text: bits.join(' · ') });
-	}
-
 	renderRankCard(el, it) {
-		const card = el.createDiv({ cls: 'scys-card' });
-		const row = card.createDiv({ cls: 'scys-rank-row' });
-		row.createSpan({ cls: 'scys-badge scys-badge-rank', text: '第 ' + it.rank + ' 名' });
-		if (it.avatar) {
-			const img = row.createEl('img', { cls: 'scys-avatar', attr: { src: it.avatar, alt: '' } });
-			img.onerror = () => img.remove();
-		}
-		this.mountTitle(row, it.title);
-		const score = row.createDiv({ cls: 'scys-rank-score' });
-		const tokens = score.createSpan({ cls: 'scys-stat' });
-		mountIcon(tokens, 'bolt');
-		tokens.createSpan({ text: formatTokens(it.tokens) + ' Token' });
-		if (it.costText) score.createSpan({ cls: 'scys-rank-cost', text: it.costText });
-		if (it.summary) card.createDiv({ cls: 'scys-rank-meta', text: it.summary });
-		const foot = card.createDiv({ cls: 'scys-card-foot' });
-		foot.createSpan({ cls: 'scys-spacer' });
-		this.appendActions(foot, it);
-		card.onclick = (e) => {
-			if (e.target.closest('button')) return;
+		const rankNum = Number(it.rank);
+		const top = Number.isInteger(rankNum) && rankNum >= 1 && rankNum <= 3;
+		const row = el.createDiv({
+			cls: 'scys-rank' + (it.me ? ' scys-rank-me' : ''),
+			attr: { role: 'link', tabindex: '0' },
+		});
+		const open = () => {
 			if (it.url) window.open(it.url, '_blank');
 		};
+		row.onclick = open;
+		row.onkeydown = (e) => {
+			if (e.key !== 'Enter' && e.key !== ' ') return;
+			e.preventDefault();
+			open();
+		};
+		row.createSpan({ cls: 'scys-rank-no' + (top ? ' is-top' : ''), text: it.rank == null || it.rank === '' ? '—' : String(it.rank) });
+		const slot = row.createSpan({ cls: 'scys-avatar-slot' + (it.avatar ? '' : ' is-empty') });
+		if (it.avatar) {
+			const img = slot.createEl('img', { attr: { src: it.avatar, alt: '' } });
+			img.onerror = () => {
+				img.remove();
+				slot.addClass('is-empty');
+			};
+		}
+		const who = row.createDiv({ cls: 'scys-rank-who' });
+		const name = who.createDiv({ cls: 'scys-title', text: it.title || '' });
+		if (it.title) name.setAttr('title', it.title);
+		if (it.me) who.createSpan({ cls: 'scys-me-tag', text: '我' });
+		row.createDiv({ cls: 'scys-rank-sub', text: it.summary || '' });
+		row.createDiv({ cls: 'scys-rank-primary', text: it.primaryText || (formatTokens(it.tokens) + ' Token') });
+		row.createDiv({ cls: 'scys-rank-secondary', text: it.costText || '' });
 	}
 
 	appendActions(foot, it) {
@@ -1303,7 +1366,8 @@ class ScysRadarView extends ItemView {
 		const feed = this.feed || {};
 		const stamp = '更新于 ' + (this.updatedAt || new Date()).toLocaleTimeString('zh-CN');
 		if (feed.pager === 'top') {
-			el.createDiv({ cls: 'scys-page-label', text: (feed.topLabel || ('前 ' + this.items.length + ' 名')) + ' · ' + stamp });
+			const label = feed.topLabel || ('前 ' + this.items.length + ' 名');
+			el.createDiv({ cls: 'scys-page-label', text: this.tab === 'token' ? label : label + ' · ' + stamp });
 			if (feed.partialNote) el.createDiv({ cls: 'scys-page-note', text: feed.partialNote });
 			return;
 		}
@@ -1601,7 +1665,7 @@ class ScysRadarSettingTab extends PluginSettingTab {
 				await this.plugin.saveSettings();
 			})
 		);
-		new Setting(containerEl).setName('每页条数和列表模式').setDesc('在雷达侧栏工具栏切换，会记住。可选 10 / 20 / 50，以及简洁、精简。热门和超级标的每次向接口最多要 10 条，20 和 50 会连续请求后拼成一页。精华、搜索、风向标、中标一次请求一页。榜单和 Token 榜显示前 N 名，没有第 2 页。');
+		new Setting(containerEl).setName('每页条数和列表模式').setDesc('在雷达侧栏工具栏切换，会记住。可选 10 / 20 / 50，以及简洁、精简。Token 榜还可切时间和口径。热门和超级标的每次向接口最多要 10 条，20 和 50 会连续请求后拼成一页。精华、搜索、风向标、中标一次请求一页。榜单和 Token 榜显示前 N 名，没有第 2 页。');
 		new Setting(containerEl).setName('航海显示已结束').setDesc('默认只看「即将开放 / 报名中 / 进行中」；打开后可翻阅全部历史航海（约 380 条、37 期），便于回溯往期选题').addToggle((t) =>
 			t.setValue(!!this.plugin.settings.sailIncludeFinished).onChange(async (v) => {
 				this.plugin.settings.sailIncludeFinished = v;
@@ -1725,6 +1789,8 @@ class ScysRadarPlugin extends Plugin {
 		if (this.settings.listMode !== 'compact' && this.settings.listMode !== 'brief') {
 			this.settings.listMode = data && data.showBody === false ? 'compact' : 'brief';
 		}
+		this.settings.tokenRankRange = tokenRangeKey(this.settings.tokenRankRange);
+		this.settings.tokenRankMetric = tokenMetricKey(this.settings.tokenRankMetric);
 	}
 
 	async saveSettings() {
@@ -1942,13 +2008,13 @@ class ScysRadarPlugin extends Plugin {
 		if (cookie) headers.Cookie = cookie;
 		const base = this.settings.tokenRankEndpoint;
 		const size = this.pageArgs().pageSize;
-		const [mine, r, today, sync] = await Promise.all([
-			requestUrlJson({ url: 'https://scys.com/tokenrank/api/subapp/me-lab?range=7d', headers }).catch(() => null),
-			requestUrlJson({ url: base + '?range=7d&board=total&metric=total&limit=' + size, headers }),
-			requestUrlJson({ url: base + '?range=today&board=total&metric=total&limit=1', headers }).catch(() => null),
-			requestUrlJson({ url: 'https://scys.com/tokenrank/api/subapp/connection-status', headers }).catch(() => null),
+		const range = tokenRangeKey(this.settings.tokenRankRange);
+		const metric = tokenMetricKey(this.settings.tokenRankMetric);
+		const [mine, r] = await Promise.all([
+			requestUrlJson({ url: 'https://scys.com/tokenrank/api/subapp/me-lab?range=' + encodeURIComponent(range), headers }).catch(() => null),
+			requestUrlJson({ url: base + '?range=' + encodeURIComponent(range) + '&board=total&metric=' + encodeURIComponent(metric) + '&limit=' + size, headers }),
 		]);
-		const built = buildTokenRank(mine, r, today, sync);
+		const built = buildTokenRank(mine, r, range, metric);
 		this.tokenProfile = built.profile;
 		this.tokenRankState = built.rankState;
 		return built.feed;
